@@ -95,7 +95,6 @@ const API = (() => {
       risks: items.length,
       high,
       people,
-      todo: (d.riskItems || []).filter((x) => x.todoStatus !== 'done').length,
     };
   }
 
@@ -182,23 +181,6 @@ const API = (() => {
     return { ok: true };
   }
 
-  async function dispatch(payload) {
-    const d = loadDb();
-    d.riskItems = d.riskItems || [];
-    const exist = d.riskItems.filter((x) => x.ruleId === payload.ruleId && x.todoStatus !== 'done');
-    if (exist.length) return { ok: true, duplicated: true, item: exist[0] };
-    const item = {
-      _id: genId('ri'),
-      ruleId: payload.ruleId, risk: payload.risk || '', owner: payload.owner || 'admin',
-      assignee: payload.assignee || '', dueDate: payload.dueDate || '',
-      todoStatus: 'pending', note: payload.note || '',
-    };
-    d.riskItems.push(item);
-    log(d, '派发风险处置', `${payload.ruleId} → ${item.owner}`);
-    saveDb(d);
-    return { ok: true, item };
-  }
-
   /* ---------- 设置 ---------- */
   async function settings() {
     return { settings: loadDb().settings || {} };
@@ -279,7 +261,7 @@ const API = (() => {
     list, add, update, remove,
     health: () => req('GET', '/api/health'),
     stats, scan, riskByEmployee,
-    quiz, rules, setRule, confirm, survey, dispatch,
+    quiz, rules, setRule, confirm, survey,
     settings, saveSettings,
     exportAll, importAll, reset, clearAll,
 

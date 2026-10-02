@@ -1,4 +1,4 @@
-/* 法务风险模块：风险清单 / 规则配置 / 确认台账 / 风险处置 / AI 问答 / 自检问卷 */
+/* 法务风险模块：风险清单 / 规则配置 / 合规自查 / AI 问答 / 自检问卷 */
 window.PAGES = window.PAGES || {};
 
 const DISCLAIMER =
@@ -73,22 +73,6 @@ PAGES.risk = {
         b.disabled = false;
       };
     });
-
-    // 派发处置
-    listEl.querySelectorAll('[data-dispatch]').forEach((b) => {
-      b.onclick = async () => {
-        const it = items[b.dataset.dispatch];
-        try {
-          const r = await API.dispatch({ ruleId: it.ruleId, risk: it.risk, owner: 'admin' });
-          if (r.duplicated) UI.toast('已在处置台账中，去「风险处置」看进度');
-          else UI.toast('已派发到风险处置');
-          b.textContent = '已派发';
-          b.disabled = true;
-        } catch (e) {
-          UI.toast('派发失败：' + e.message);
-        }
-      };
-    });
   },
 };
 
@@ -113,7 +97,6 @@ function riskCard(it, idx, firstCount) {
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn small" data-toggle="${idx}">展开详情</button>
       <button class="btn small" data-ai="${idx}">AI 解读</button>
-      <button class="btn small" data-dispatch="${idx}">派发处置</button>
     </div>
     <div class="ri-body" id="body-${idx}">
       ${people ? `<b>涉及人员：</b><ul class="people-list">${people}</ul>` : ''}
@@ -192,18 +175,29 @@ PAGES.riskconfirm = {
           <input class="search" id="kw" placeholder="搜索…" />
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          系统算不出的项目，在这里逐条确认（原「确认台账」与「自检问卷」已合并为一处）。
-          答「没做到」的会直接进入风险清单。
+          系统算不出的项目，在这里逐条勾选（原「确认台账」与「自检问卷」已合并为一处）。
+          勾选完点页面底部「提交自查结果」，答「没做到」的会进入风险清单。
         </p>
         <div id="list"></div>
+        <div class="toolbar" style="margin-top:14px">
+          <span id="pendCnt" style="color:var(--muted);font-size:13px"></span>
+          <div class="spacer"></div>
+          <button class="btn primary" id="btnSubmit">提交自查结果</button>
+        </div>
       </div>`;
     const listEl = c.querySelector('#list');
+    const pend = {}; // 勾选先放暂存，点提交才真正入库
+    const updPend = () => {
+      const n = Object.keys(pend).length;
+      const el = c.querySelector('#pendCnt');
+      if (el) el.textContent = n ? `本次已勾选 ${n} 条，待提交` : '';
+    };
     const draw = (kw) => {
       const list = kw ? rules.filter((r) => (r.risk || '').includes(kw) || (r.q || '').includes(kw)) : rules;
       listEl.innerHTML = list
         .slice(0, 200)
         .map((r) => {
-          const a = answered[r.id];
+          const a = pend[r.id] || answered[r.id]; // 暂存优先显示
           return `<div class="q" data-rule="${r.id}">
             <div class="q-text">${UI.esc(r.q || r.risk)}<br/><small style="color:var(--muted)">${UI.esc(r.id)} · ${UI.esc(r.catLabel || r.cat)}</small></div>
             <div class="opts">
@@ -217,74 +211,42 @@ PAGES.riskconfirm = {
         .join('');
 
       listEl.querySelectorAll('.opt').forEach((b) => {
-        b.onclick = async () => {
+        b.onclick = () => {
           const wrap = b.closest('.q');
           const rid = wrap.dataset.rule;
           const ans = b.dataset.ans;
           wrap.querySelectorAll('.opt').forEach((o) => o.classList.remove('on-yes', 'on-no', 'on-unsure'));
           b.classList.add('on-' + ans);
-          await API.confirm(rid, ans, '');
-          answered[rid] = { ruleId: rid, answer: ans };
-          UI.toast('已记录');
+          const prev = pend[rid] || answered[rid] || {};
+          pend[rid] = { ruleId: rid, answer: ans, note: prev.note || '' };
+          updPend();
           if (ans === 'no') draw(c.querySelector('#kw').value.trim());
         };
       });
       listEl.querySelectorAll('[data-note]').forEach((inp) => {
-        inp.onchange = async () => {
-          await API.confirm(inp.dataset.note, 'no', inp.value);
-          UI.toast('备注已保存');
+        inp.onchange = () => {
+          const rid = inp.dataset.note;
+          const prev = pend[rid] || answered[rid] || { ruleId: rid, answer: 'no' };
+          pend[rid] = { ruleId: rid, answer: prev.answer || 'no', note: inp.value };
+          updPend();
         };
       });
     };
     draw('');
-    c.querySelector('#kw').oninput = (e) => draw(e.target.value.trim());
-  },
-};
 
-/* ============ 风险处置 ============ */
-PAGES.risktodo = {
-  title: '风险处置',
-  async render(c) {
-    const items = await API.list('riskItems');
-    const open = items.filter((i) => i.todoStatus !== 'done').length;
-    c.innerHTML = `
-      <div class="card">
-        <div class="toolbar">
-          <h2 style="margin:0">风险处置台账</h2>
-          <div class="spacer"></div>
-          <span class="tag ${open ? 'orange' : 'green'}">待处理 ${open} 条</span>
-        </div>
-        <table class="tbl">
-          <thead><tr><th>风险点</th><th style="width:90px">责任人</th><th style="width:110px">期限</th><th style="width:90px">状态</th><th style="width:130px">操作</th></tr></thead>
-          <tbody>
-            ${items.length
-              ? items
-                  .map(
-                    (i) => `<tr>
-                  <td>${UI.esc(i.risk)}<br/><small style="color:var(--muted)">${UI.esc(i.ruleId)}</small></td>
-                  <td>${UI.esc(i.assignee || '—')}</td>
-                  <td>${UI.fmtDate(i.dueDate)}</td>
-                  <td>${i.todoStatus === 'done' ? '<span class="tag green">已关闭</span>' : i.todoStatus === 'doing' ? '<span class="tag blue">整改中</span>' : '<span class="tag orange">待处理</span>'}</td>
-                  <td>
-                    ${i.todoStatus === 'done' ? '' : `<button class="btn small" data-doing="${i._id}">开始整改</button> <button class="btn small" data-done="${i._id}">关闭</button>`}
-                  </td>
-                </tr>`
-                  )
-                  .join('')
-              : '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">暂无待处置风险，可在「风险清单」里派发</td></tr>'}
-          </tbody>
-        </table>
-      </div>`;
-    c.querySelectorAll('[data-doing]').forEach((b) => (b.onclick = async () => {
-      await API.update('riskItems', b.dataset.doing, { todoStatus: 'doing' });
-      UI.toast('已标记为整改中');
-      PAGES.risktodo.render(c);
-    }));
-    c.querySelectorAll('[data-done]').forEach((b) => (b.onclick = async () => {
-      await API.update('riskItems', b.dataset.done, { todoStatus: 'done' });
-      UI.toast('已关闭');
-      PAGES.risktodo.render(c);
-    }));
+    c.querySelector('#btnSubmit').onclick = async () => {
+      const ids = Object.keys(pend);
+      if (!ids.length) return UI.toast('还没有勾选任何项目');
+      for (const rid of ids) {
+        await API.confirm(rid, pend[rid].answer, pend[rid].note || '');
+        answered[rid] = { ruleId: rid, answer: pend[rid].answer, note: pend[rid].note || '' };
+        delete pend[rid];
+      }
+      const noCnt = ids.filter((rid) => answered[rid].answer === 'no').length;
+      UI.toast(noCnt ? `已提交，${noCnt} 条「没做到」已进入风险清单` : '已提交，本次没有新增风险');
+      location.hash = '#/risk';
+    };
+    c.querySelector('#kw').oninput = (e) => draw(e.target.value.trim());
   },
 };
 

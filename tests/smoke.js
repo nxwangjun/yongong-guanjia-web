@@ -150,15 +150,6 @@ const ok = (name, cond, extra) => {
   const surv = await API.list('surveys');
   ok('自检问卷落库', surv.some((x) => x.ruleId === 'R-DEMO-02'));
 
-  // 派发处置（去重逻辑）
-  const first = sc.items[0];
-  const dp1 = await API.dispatch({ ruleId: first.ruleId, risk: first.risk, owner: 'admin' });
-  const dp2 = await API.dispatch({ ruleId: first.ruleId, risk: first.risk, owner: 'admin' });
-  ok('派发处置+幂等去重', dp1.ok && dp2.duplicated === true);
-  await API.update('riskItems', dp1.item._id, { todoStatus: 'done' });
-  const todo = await API.list('riskItems');
-  ok('处置状态更新', todo.find((x) => x._id === dp1.item._id).todoStatus === 'done');
-
   // 设置
   await API.saveSettings({ minWage: 2300 });
   const s2 = await API.settings();

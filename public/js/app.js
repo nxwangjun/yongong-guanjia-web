@@ -2,9 +2,9 @@
 const APP = (() => {
   // 检测系统只保留与"风险检测"直接相关的模块；免登录版去掉「成员账户」
   const GROUPS = [
-    { name: '检测', items: [['home', '检测概览'], ['people', '员工风险画像']] },
-    { name: '风险', items: [['risk', '风险清单'], ['riskconfirm', '合规自查'], ['risktodo', '风险处置'], ['riskrule', '规则配置'], ['ai', 'AI 问答']] },
     { name: '数据', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证件资质'], ['dataio', '数据导入']] },
+    { name: '检测', items: [['home', '检测概览'], ['people', '员工风险画像']] },
+    { name: '风险', items: [['risk', '风险清单'], ['riskconfirm', '合规自查'], ['riskrule', '规则配置'], ['ai', 'AI 问答']] },
     { name: '系统', items: [['setting', '系统设置']] },
   ];
 
@@ -12,14 +12,21 @@ const APP = (() => {
   PAGES.home = {
     title: '首页',
     async render(c) {
-      const [s, h, pe] = await Promise.all([
+      const [s, h, pe, rd, confList] = await Promise.all([
         API.stats().catch(() => ({})),
         API.health().catch(() => ({})),
         API.riskByEmployee().catch(() => ({ employees: [] })),
+        API.rules().catch(() => ({ rules: [] })),
+        API.list('confirms').catch(() => []),
       ]);
       const emps = pe.employees || [];
       const affected = emps.filter((e) => e.riskCount > 0).length;
       const high = emps.reduce((x, e) => x + (e.highCount || 0), 0);
+      // 覆盖度：全部规则里能由数据测算的条数 + 需自查的条数、已确认条数
+      const allRules = rd.rules || [];
+      const autoCnt = allRules.filter((r) => r.level === 'auto').length;
+      const askCnt = allRules.length - autoCnt;
+      const confCnt = (confList || []).length;
 
       c.innerHTML = `
         <div class="demo-banner">
@@ -40,6 +47,11 @@ const APP = (() => {
           <div class="stat alert"><b>${affected}</b><span>存在风险的员工</span></div>
           <div class="stat alert"><b>${high}</b><span>高危问题</span></div>
           <div class="stat"><b>${s.risks ?? 0}</b><span>风险项合计</span></div>
+        </div>
+        <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13.5px">📊 检测覆盖：<b>${autoCnt}</b> 条已由数据自动测算，<b>${askCnt}</b> 条需合规自查（已确认 <b>${confCnt}</b> / ${askCnt}）</span>
+          <div class="spacer"></div>
+          <button class="btn small" onclick="location.hash='#/riskconfirm'">去合规自查</button>
         </div>
         <div class="card">
           <h2>开始检测</h2>
@@ -70,7 +82,7 @@ const APP = (() => {
       c.querySelector('#btnWipe').onclick = () =>
         UI.confirmBox('将清空本浏览器里的全部数据（员工/合同/考勤/薪资/社保/证照/问卷答案全部清空，从白板开始），确定？', async () => {
           const d = await API.exportAll();
-          ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs', 'riskItems'].forEach((k) => (d[k] = []));
+          ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs'].forEach((k) => (d[k] = []));
           d.confirms = {};
           d.surveys = {};
           d.audit = [];

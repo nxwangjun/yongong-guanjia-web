@@ -12,8 +12,7 @@ const DB_FILE = path.join(__dirname, '..', 'data', 'db.json');
 // 集合结构（首次运行按此初始化）
 const EMPTY = {
   employees: [], contracts: [], attendances: [], payrolls: [], socials: [], certs: [],
-  confirms: [], surveys: [], riskItems: [],
-  applies: [], approvals: [], flows: [],
+  confirms: [], surveys: [],
   audit: [], settings: {}, ruleCfg: {},
 };
 

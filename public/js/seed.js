@@ -3,8 +3,7 @@
    修改种子数据请改 src/db.js 的 seed()，然后重跑 build-browser.js。 */
 const EMPTY = {
   employees: [], contracts: [], attendances: [], payrolls: [], socials: [], certs: [],
-  confirms: [], surveys: [], riskItems: [],
-  applies: [], approvals: [], flows: [],
+  confirms: [], surveys: [],
   audit: [], settings: {}, ruleCfg: {},
 };
 

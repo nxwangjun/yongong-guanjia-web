@@ -27,10 +27,6 @@ window.CSV = (() => {
       { k: 'employeeId', t: '员工ID' }, { k: 'name', t: '证照名称' },
       { k: 'no', t: '证书编号' }, { k: 'expireDate', t: '有效期至', d: 1 },
     ],
-    riskItems: [
-      { k: 'ruleId', t: '规则号' }, { k: 'risk', t: '风险点' }, { k: 'owner', t: '归口' },
-      { k: 'assignee', t: '责任人' }, { k: 'dueDate', t: '期限', d: 1 }, { k: 'todoStatus', t: '状态' },
-    ],
   };
 
   function rowsToCsv(rows) {

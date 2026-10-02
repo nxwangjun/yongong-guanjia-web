@@ -7,7 +7,7 @@ PAGES.dataio = {
   async render(c) {
     const COLS = [
       ['employees', '员工'], ['contracts', '劳动合同'], ['attendances', '考勤'],
-      ['payrolls', '薪资'], ['socials', '社保'], ['certs', '证照'], ['riskItems', '风险处置'],
+      ['payrolls', '薪资'], ['socials', '社保'], ['certs', '证照'],
     ];
     c.innerHTML = `
       <div class="card">
@@ -31,7 +31,7 @@ PAGES.dataio = {
         <h2>导入</h2>
         <p style="color:var(--muted);font-size:13px">
           <b>.json</b>：整体恢复备份（覆盖当前全部数据，导入前会先让你确认）。<br/>
-          <b>.csv</b>：单表导入，需在下边选择对应表，表头需与导出时一致；CSV 用 Excel / WPS 就能编辑。
+          <b>.csv</b>：单表导入，表头需与模板一致；先用「下载模板」拿一份空白表，Excel / WPS 填好后导回。
         </p>
         <input type="file" id="file" accept=".csv,.json" />
         <div class="toolbar" style="margin-top:10px">
@@ -39,10 +39,11 @@ PAGES.dataio = {
           <select id="impCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
             ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
           </select>
+          <button class="btn" id="tplBtn">下载模板</button>
           <button class="btn primary" id="impBtn">确认导入</button>
         </div>
         <p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">
-          CSV 导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。
+          CSV 导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。导入前会先弹预览，确认无误才入库。
         </p>
       </div>
 
@@ -91,6 +92,18 @@ PAGES.dataio = {
       UI.toast('已选择：' + f.name);
     };
 
+    // 下载空白模板（中文表头，Excel / WPS 直接填）
+    c.querySelector('#tplBtn').onclick = () => {
+      const col = c.querySelector('#impCol').value;
+      const spec = window.CSV.EXPORT_FIELDS[col];
+      const label = COLS.filter((x) => x[0] === col)[0][1];
+      download(
+        new Blob(['﻿' + spec.map((f) => f.t).join(',') + '\r\n'], { type: 'text/csv;charset=utf-8' }),
+        '模板_' + label + '.csv'
+      );
+      UI.toast('已下载「' + label + '」模板，第一行表头别动，从第二行开始填');
+    };
+
     c.querySelector('#impBtn').onclick = async () => {
       if (!picked) return UI.toast('请先选择文件');
       const name = picked.name.toLowerCase();
@@ -107,11 +120,34 @@ PAGES.dataio = {
         if (name.endsWith('.csv')) {
           const text = await picked.text();
           const col = c.querySelector('#impCol').value;
+          const spec = window.CSV.EXPORT_FIELDS[col];
           const recs = window.CSV.csvToCol(col, text);
           if (!recs.length) return UI.toast('CSV 里没有可导入的记录');
-          for (const r of recs) await API.add(col, r);
-          UI.toast('已导入 ' + recs.length + ' 条');
-          setTimeout(() => location.reload(), 800);
+          const label = COLS.filter((x) => x[0] === col)[0][1];
+          const prev = recs.slice(0, 5).map((r, i) => `<tr><td>${i + 1}</td>` +
+            spec.map((f) => `<td>${UI.esc(r[f.k] === true ? '是' : r[f.k] === false ? '否' : (r[f.k] ?? ''))}</td>`).join('') +
+            '</tr>').join('');
+          UI.modal('导入预览', `
+            <p style="margin:0 0 8px">将从「${UI.esc(picked.name)}」向<b>${UI.esc(label)}</b>追加 <b>${recs.length}</b> 条记录：</p>
+            <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+              <table class="tbl" style="margin:0"><thead><tr><th>#</th>${spec.map((f) => `<th>${UI.esc(f.t)}</th>`).join('')}</tr></thead><tbody>${prev}</tbody></table>
+            </div>
+            ${recs.length > 5 ? `<p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">仅预览前 5 条，实际导入全部 ${recs.length} 条。</p>` : ''}
+          `, [
+            { text: '取消', onClick: UI.closeModal },
+            {
+              text: '确认导入', cls: 'primary',
+              onClick: async () => {
+                UI.closeModal();
+                for (const r of recs) await API.add(col, r);
+                UI.toast('已导入 ' + recs.length + ' 条');
+                UI.modal('导入完成', `<p style="margin:0">已向「${UI.esc(label)}」导入 <b>${recs.length}</b> 条记录。数据有变化，建议马上去风险清单重新扫描。</p>`, [
+                  { text: '留在本页', onClick: () => { UI.closeModal(); location.reload(); } },
+                  { text: '去风险清单扫描', cls: 'primary', onClick: () => { UI.closeModal(); location.hash = '#/risk'; } },
+                ]);
+              },
+            },
+          ]);
           return;
         }
         UI.toast('只支持 .json / .csv');
