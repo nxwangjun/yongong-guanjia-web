@@ -1,4 +1,4 @@
-/* 应用外壳：侧边栏 / 路由 / 首页 / 全局状态 */
+/* 应用外壳：登录态 / 侧边栏（按角色）/ 路由 / 首页 */
 const APP = (() => {
   const GROUPS = [
     { name: '工作台', items: [['home', '首页']] },
@@ -8,15 +8,46 @@ const APP = (() => {
     { name: '系统', items: [['role', '角色权限'], ['member', '成员账户'], ['invite', '邀请成员'], ['layout', '模块编排'], ['audit', '审计日志'], ['dataio', '数据导入导出'], ['setting', '系统设置']] },
   ];
 
+  const ROLE_NAMES = { admin: '管理员', hr: '人力资源', legal: '法务', approver: '审批人', staff: '普通员工' };
+
+  // 未手动配置权限时的出厂默认（与服务端 src/auth.js 保持一致）
+  const DEFAULT_MODULES = {
+    hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'risk', 'risktodo', 'survey'],
+    legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'survey', 'ai'],
+    approver: ['home', 'approve'],
+    // 员工可自助查看「自己」的档案/合同/考勤/薪资/社保/证照，服务端配合 scope=self 只返回本人数据
+    staff: ['home', 'apply', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert'],
+  };
+
+  let roleModules = null;
+
+  function canModule(role, mod) {
+    if (role === 'admin') return true;
+    if (roleModules && roleModules[role]) return roleModules[role].includes(mod);
+    return (DEFAULT_MODULES[role] || ['home']).includes(mod);
+  }
+
+  const me = { user: null };
+
   /* ---------- 首页 ---------- */
   PAGES.home = {
     title: '首页',
     async render(c) {
-      const [s, h] = await Promise.all([API.stats().catch(() => ({})), API.health().catch(() => ({}))]);
+      const [s, h, mine] = await Promise.all([
+        API.stats().catch(() => ({})),
+        API.health().catch(() => ({})),
+        API.me().catch(() => ({})),
+      ]);
+      const u = mine.user || me.user || {};
+      const scopeTxt = { all: '全部数据', dept: '本部门数据', self: '仅本人数据' }[mine.scope] || '全部数据';
+
       c.innerHTML = `
         <div class="card">
-          <h2>${UI.esc(s.companyName || h.companyName || '企业用工合规管理')}</h2>
+          <h2>${UI.esc(u.companyName || h.companyName || '企业用工合规管理')}</h2>
           <p style="color:var(--muted);margin:0">
+            当前身份：<b>${UI.esc(u.name || '')}</b>（${UI.esc(ROLE_NAMES[u.role] || u.role || '')}）· 可见范围：${UI.esc(scopeTxt)}
+          </p>
+          <p style="color:var(--muted);margin:6px 0 0">
             录入员工、合同、考勤、薪资、社保数据 → 系统按 116 条规则自动扫描 → 风险下钻到具体人 → 派发整改 → AI 解读。
           </p>
         </div>
@@ -33,7 +64,7 @@ const APP = (() => {
             <button class="btn" onclick="location.hash='#/staff'">录入员工</button>
             <button class="btn" onclick="location.hash='#/survey'">做自检问卷</button>
             <button class="btn" onclick="location.hash='#/ai'">问 AI 劳动法问题</button>
-            <button class="btn" onclick="location.hash='#/setting'">配置 AI 密钥</button>
+            <button class="btn" onclick="location.hash='#/setting'">系统设置</button>
           </div>
         </div>
         <div class="card">
@@ -53,7 +84,63 @@ const APP = (() => {
     },
   };
 
-  /* ---------- 侧边栏 ---------- */
+  /* ---------- 登录态 ---------- */
+  function showLogin() {
+    document.querySelector('.sidebar').style.display = 'none';
+    const ub = document.getElementById('userBar');
+    if (ub) ub.style.display = 'none';
+    document.getElementById('btnQuickScan').style.display = 'none';
+    document.getElementById('pageTitle').textContent = '登录';
+    document.getElementById('content').innerHTML = '';
+    PAGES.login.render(document.getElementById('content'));
+  }
+
+  async function afterLogin() {
+    const info = await API.me().catch(() => null);
+    if (info && info.user) me.user = info.user;
+    document.querySelector('.sidebar').style.display = '';
+    document.getElementById('btnQuickScan').style.display = '';
+
+    // 读取权限配置，用于侧边栏过滤
+    try {
+      const s = await API.settings();
+      roleModules = s.roleModules || null;
+    } catch (e) {}
+
+    renderUserBar();
+    await renderNav();
+    await route();
+  }
+
+  function renderUserBar() {
+    let ub = document.getElementById('userBar');
+    if (!ub) {
+      ub = document.createElement('div');
+      ub.id = 'userBar';
+      ub.style.cssText = 'display:flex;align-items:center;gap:8px';
+      document.querySelector('.tb-right').appendChild(ub);
+    }
+    ub.style.display = 'flex';
+    const u = me.user || {};
+    ub.innerHTML =
+      `<span class="tag blue">${UI.esc(u.name || '')} · ${UI.esc(ROLE_NAMES[u.role] || u.role || '')}</span>` +
+      `<button class="btn small" id="btnLogout">退出</button>`;
+    document.getElementById('btnLogout').onclick = async () => {
+      try {
+        await API.logout();
+      } catch (e) {}
+      API.clearToken();
+      me.user = null;
+      showLogin();
+    };
+  }
+
+  function onNeedLogin() {
+    UI.toast('登录已过期');
+    showLogin();
+  }
+
+  /* ---------- 侧边栏（按角色过滤） ---------- */
   async function renderNav() {
     let s = {};
     try {
@@ -61,10 +148,12 @@ const APP = (() => {
     } catch (e) {}
     const hidden = s.hiddenModules || [];
     const order = s.moduleOrder || [];
+    const role = (me.user || {}).role || 'admin';
     const nav = document.getElementById('sideNav');
     nav.innerHTML = GROUPS.map((g) => {
       const items = g.items
         .filter((it) => !hidden.includes(it[0]))
+        .filter((it) => canModule(role, it[0]))
         .sort((a, b) => {
           const ia = order.indexOf(a[0]);
           const ib = order.indexOf(b[0]);
@@ -101,6 +190,18 @@ const APP = (() => {
   /* ---------- 路由 ---------- */
   async function route() {
     const key = (location.hash || '#/home').replace('#/', '') || 'home';
+    const role = (me.user || {}).role || 'admin';
+
+    // 越权访问拦截
+    if (key !== 'home' && !canModule(role, key)) {
+      document.getElementById('pageTitle').textContent = '无访问权限';
+      document.getElementById('content').innerHTML =
+        `<div class="card"><h2>无访问权限</h2><p>当前角色（${UI.esc(ROLE_NAMES[role] || role)}）没有「${
+          (PAGES[key] || {}).title || key
+        }」模块的权限。可在「角色权限」里由管理员调整。</p></div>`;
+      return;
+    }
+
     const page = PAGES[key] || PAGES.home;
     document.title = '用工管家 · ' + page.title;
     document.getElementById('pageTitle').textContent = page.title;
@@ -120,12 +221,19 @@ const APP = (() => {
     document.getElementById('btnMenu').onclick = () =>
       document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('btnQuickScan').onclick = () => (location.hash = '#/risk');
-    window.addEventListener('hashchange', route);
-    renderNav().then(route);
+    window.addEventListener('hashchange', () => {
+      if (API.getToken()) route();
+    });
+
     loadHealth();
+    if (API.getToken()) {
+      afterLogin().catch(() => showLogin());
+    } else {
+      showLogin();
+    }
   }
 
-  return { init, loadHealth, renderNav, route };
+  return { init, loadHealth, renderNav, route, afterLogin, onNeedLogin, showLogin, canModule, me };
 })();
 
 document.addEventListener('DOMContentLoaded', APP.init);

@@ -64,13 +64,15 @@ PAGES.member = {
   title: '成员账户',
   render(c) {
     return UI.crudPage(c, {
-      title: '成员',
-      col: 'users',
-      desc: '成员列表、停用、移交管理员。',
+      title: '成员账号',
+      col: 'accounts',
+      desc: '公司成员的真实登录账号。改角色即改权限；停用后该账号无法登录。',
       fields: [
+        { k: 'username', t: '登录账号', type: 'text', required: true },
         { k: 'name', t: '姓名', type: 'text', required: true },
         { k: 'role', t: '角色', type: 'select', options: ROLES },
-        { k: 'phone', t: '手机号', type: 'text' },
+        { k: 'dept', t: '所属部门', type: 'text' },
+        { k: 'employeeId', t: '关联员工档案ID', type: 'text' },
         { k: 'enabled', t: '启用', type: 'select', options: [['1', '是'], ['0', '否']] },
       ],
     });
@@ -85,7 +87,14 @@ PAGES.invite = {
     c.innerHTML = `
       <div class="card">
         <div class="toolbar"><h2 style="margin:0">邀请成员</h2><div class="spacer"></div>
+          <select id="invRole" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
+            ${ROLES.filter((r) => r[0] !== 'admin').map((r) => `<option value="${r[0]}">${r[1]}</option>`).join('')}
+          </select>
+          <input class="search" id="invDept" placeholder="所属部门（可空）" style="width:150px" />
           <button class="btn primary" id="gen">生成邀请码</button></div>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+          生成的码发给成员，他在登录页选「邀请码加入」，填码注册后自动进入本公司并拿到对应角色。
+        </p>
         <table class="tbl">
           <thead><tr><th>邀请码</th><th style="width:110px">创建时间</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
           <tbody>
@@ -93,7 +102,7 @@ PAGES.invite = {
               ? list
                   .map(
                     (i) => `<tr>
-                  <td><code style="font-size:14px">${UI.esc(i.code)}</code></td>
+                  <td>${UI.esc(i.code)} <span class="tag blue">${UI.esc((ROLES.filter((r) => r[0] === i.role)[0] || ['', i.role || 'staff'])[1])}</span></td>
                   <td>${UI.fmtDate(i.createdAt)}</td>
                   <td>${i.used ? '<span class="tag gray">已使用</span>' : '<span class="tag green">有效</span>'}</td>
                   <td><button class="btn small danger" data-del="${i._id}">吊销</button></td>
@@ -106,8 +115,13 @@ PAGES.invite = {
       </div>`;
     c.querySelector('#gen').onclick = async () => {
       const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-      await API.add('invites', { code, used: false });
-      UI.toast('已生成：' + code);
+      await API.add('invites', {
+        code,
+        role: c.querySelector('#invRole').value,
+        dept: c.querySelector('#invDept').value.trim(),
+        used: false,
+      });
+      UI.toast('已生成：' + code + '（把它发给成员）');
       PAGES.invite.render(c);
     };
     c.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {

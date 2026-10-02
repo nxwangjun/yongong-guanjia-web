@@ -10,6 +10,7 @@ const path = require('path');
 const config = require('./src/config');
 const db = require('./src/db');
 const { scan } = require('./src/engine');
+const auth = require('./src/auth');
 const { corpus, quiz } = require('./src/corpus');
 const { diagnose, chat, explainRisk, setRuntimeKey } = require('./src/agent');
 
@@ -29,8 +30,19 @@ const MIME = {
 const COLLECTIONS = [
   'employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs',
   'confirms', 'surveys', 'riskItems', 'applies', 'approvals', 'flows',
-  'users', 'members', 'invites', 'audit',
+  'users', 'members', 'invites', 'audit', 'tenants', 'accounts',
 ];
+
+// 集合 → 所属模块（用于模块级权限校验）
+const COL2MOD = {
+  employees: 'staff', contracts: 'contract', attendances: 'attend',
+  payrolls: 'payroll', socials: 'social', certs: 'cert',
+  riskItems: 'risktodo', applies: 'apply', approvals: 'approve', flows: 'flowdesign',
+  invites: 'invite', users: 'member', accounts: 'member', tenants: 'setting', audit: 'audit',
+};
+
+// 无需登录即可访问的接口
+const PUBLIC_API = ['/api/health'];
 
 function sendJson(res, code, data) {
   const body = JSON.stringify(data);
@@ -82,12 +94,14 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-/** 组装扫描所需的完整数据快照 */
-function snapshot() {
+/** 组装扫描所需的完整数据快照（按登录者所在公司隔离） */
+function snapshot(sess) {
   const d = db.load();
+  const pick = (arr) => auth.byTenant(arr || [], sess);
   return {
-    employees: d.employees, contracts: d.contracts, attendances: d.attendances,
-    payrolls: d.payrolls, socials: d.socials, certs: d.certs,
+    employees: pick(d.employees), contracts: pick(d.contracts),
+    attendances: pick(d.attendances), payrolls: pick(d.payrolls),
+    socials: pick(d.socials), certs: pick(d.certs),
     settings: d.settings, ruleCfg: d.ruleCfg, confirms: d.confirms, surveys: d.surveys,
   };
 }
@@ -102,6 +116,54 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return sendJson(res, 204, {});
 
   try {
+    /* ---------- 登录态 ---------- */
+    const isAuthApi = pathname.startsWith('/api/auth/');
+    const token =
+      (req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
+      searchParams.get('token') || '';
+    const sess = auth.session(token);
+
+    if (pathname.startsWith('/api/') && !isAuthApi && !PUBLIC_API.includes(pathname) && !sess) {
+      return sendJson(res, 401, { error: '未登录或登录已过期', needLogin: true });
+    }
+
+    /* ---------- 账号 ---------- */
+    if (pathname === '/api/auth/register' && req.method === 'POST') {
+      const b = await readBody(req);
+      try {
+        return sendJson(res, 200, auth.registerAdmin(b));
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message });
+      }
+    }
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      const b = await readBody(req);
+      try {
+        return sendJson(res, 200, auth.login(b));
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message });
+      }
+    }
+    if (pathname === '/api/auth/join' && req.method === 'POST') {
+      const b = await readBody(req);
+      try {
+        return sendJson(res, 200, auth.join(b));
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message });
+      }
+    }
+    if (pathname === '/api/auth/logout' && req.method === 'POST') {
+      auth.logout(token);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (pathname === '/api/auth/me') {
+      const u = db.list('accounts').filter((a) => a._id === sess.userId)[0] || {};
+      return sendJson(res, 200, {
+        user: auth.publicUser(u),
+        scope: auth.scopeOf(sess.role),
+      });
+    }
+
     /* ---------- 系统 ---------- */
     if (pathname === '/api/health') {
       return sendJson(res, 200, {
@@ -146,24 +208,26 @@ const server = http.createServer(async (req, res) => {
     /* ---------- 统计（首页工作台） ---------- */
     if (pathname === '/api/stats') {
       const d = db.load();
-      const items = scan(snapshot());
+      const items = scan(snapshot(sess));
       const high = items.filter((i) => i.sev === '高').length;
       const people = items.reduce((s, i) => s + (i.people || []).length, 0);
+      const myRiskItems = auth.byTenant(d.riskItems || [], sess);
+      const myEmployees = auth.byTenant(d.employees || [], sess);
       return sendJson(res, 200, {
-        employees: d.employees.filter((e) => e.status !== 'left').length,
-        left: d.employees.filter((e) => e.status === 'left').length,
-        contracts: d.contracts.length,
-        certs: d.certs.length,
+        employees: myEmployees.filter((e) => e.status !== 'left').length,
+        left: myEmployees.filter((e) => e.status === 'left').length,
+        contracts: auth.byTenant(d.contracts || [], sess).length,
+        certs: auth.byTenant(d.certs || [], sess).length,
         risks: items.length,
         high,
         people,
-        todo: d.riskItems.filter((x) => x.todoStatus !== 'done').length,
+        todo: myRiskItems.filter((x) => x.todoStatus !== 'done').length,
       });
     }
 
     /* ---------- 风险扫描 ---------- */
     if (pathname === '/api/scan') {
-      const items = scan(snapshot());
+      const items = scan(snapshot(sess));
       return sendJson(res, 200, { items, at: Date.now() });
     }
 
@@ -227,6 +291,7 @@ const server = http.createServer(async (req, res) => {
         ruleId: b.ruleId, risk: b.risk || '', owner: b.owner || 'hr',
         assignee: b.assignee || '', dueDate: b.dueDate || '',
         todoStatus: 'pending', note: b.note || '',
+        tenantId: sess ? sess.tenantId : '',
       });
       db.log('派发风险处置', `${b.ruleId} → ${b.owner || 'hr'}`);
       return sendJson(res, 200, { ok: true, item });
@@ -283,18 +348,28 @@ const server = http.createServer(async (req, res) => {
       const id = m[2] ? decodeURIComponent(m[2]) : null;
       if (!COLLECTIONS.includes(name)) return sendJson(res, 400, { error: '未知集合：' + name });
 
+      // 模块级权限（管理员恒通过；防止绕过前端直接调接口）
+      const mod = COL2MOD[name];
+      if (mod && sess && !auth.canModule(sess.role, mod)) {
+        return sendJson(res, 403, { error: '当前角色无此模块权限' });
+      }
+
       if (req.method === 'GET') {
         if (id) return sendJson(res, 200, db.get(name, id) || {});
         const filter = {};
         ['employeeId', 'status', 'type', 'todoStatus', 'role'].forEach((k) => {
           if (searchParams.get(k)) filter[k] = searchParams.get(k);
         });
-        return sendJson(res, 200, { items: db.list(name, filter) });
+        let items = db.list(name, filter);
+        items = auth.byTenant(items, sess);            // 公司隔离
+        items = auth.applyScope(items, name, sess);    // 数据范围：全部/本部门/仅本人
+        return sendJson(res, 200, { items });
       }
       if (req.method === 'POST') {
         const b = await readBody(req);
+        if (sess) b.tenantId = sess.tenantId;
         const obj = db.add(name, b);
-        db.log('新增', `${name}:${obj._id}`);
+        db.log('新增', `${name}:${obj._id}`, sess ? sess.name : '系统');
         return sendJson(res, 200, obj);
       }
       if (req.method === 'PUT' && id) {

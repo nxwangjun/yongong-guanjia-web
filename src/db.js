@@ -4,6 +4,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const DB_FILE = path.join(__dirname, '..', 'data', 'db.json');
 
@@ -13,6 +14,7 @@ const EMPTY = {
   confirms: [], surveys: [], riskItems: [],
   applies: [], approvals: [], flows: [],
   users: [], members: [], invites: [],
+  tenants: [], accounts: [], sessions: {},
   audit: [], settings: {}, ruleCfg: {},
 };
 
@@ -31,6 +33,22 @@ function load() {
   // 补齐缺失集合，避免旧文件升级时报错
   Object.keys(EMPTY).forEach((k) => {
     if (db[k] === undefined) db[k] = EMPTY[k];
+  });
+  // 旧库升级：没有账号时注入内置演示账号与演示公司，保证能登录
+  if (!db.accounts || !db.accounts.length) {
+    const s = seed();
+    db.tenants = s.tenants;
+    db.accounts = s.accounts;
+  }
+  // 旧库升级：把没有公司归属的业务数据挂到第一家公司，保证租户隔离生效
+  const defaultTenant = (db.tenants && db.tenants[0] && db.tenants[0]._id) || 't_demo';
+  ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs',
+   'riskItems', 'applies', 'approvals', 'flows'].forEach((c) => {
+    if (Array.isArray(db[c])) {
+      db[c].forEach((item) => {
+        if (item && !item.tenantId) item.tenantId = defaultTenant;
+      });
+    }
   });
   save();
   return db;
@@ -221,11 +239,45 @@ function seed() {
     { _id: 'u03', name: '李法务', role: 'legal', phone: '' },
   ];
 
+  // ---- 多租户：演示公司 + 内置账号 ----
+  const TID = 't_demo';
+  const tenants = [{ _id: TID, name: '演示科技有限公司', createdAt: Date.now() }];
+
+  const mkAccount = (username, pwd, name, role, extra) => {
+    const salt = crypto.randomBytes(16).toString('hex');
+    return Object.assign(
+      {
+        _id: 'u_' + username,
+        username, name, salt,
+        passHash: crypto.scryptSync(pwd, salt, 64).toString('hex'),
+        role, tenantId: TID, enabled: true, createdAt: Date.now(),
+      },
+      extra || {}
+    );
+  };
+
+  // 内置演示账号（不同角色，用于验证数据范围：all / dept / self）
+  const accounts = [
+    mkAccount('admin', 'admin123', '王军（管理员）', 'admin', {}),
+    mkAccount('hr', 'hr123', '张 HR', 'hr', { dept: '综合部' }),
+    mkAccount('legal', 'legal123', '李法务', 'legal', {}),
+    // 普通员工：绑定员工档案 e05（吴九），数据范围 self → 只能看到自己
+    mkAccount('staff', 'staff123', '吴九（员工）', 'staff', { dept: '工程部', employeeId: 'e05' }),
+  ];
+
+  // 业务数据挂上公司 ID
+  const withTenant = (arr) => arr.map((x) => Object.assign({}, x, { tenantId: TID }));
+
   return {
     ...JSON.parse(JSON.stringify(EMPTY)),
-    employees, contracts, attendances, payrolls, socials, certs,
-    settings, users,
-    audit: [{ _id: 'au0', action: '初始化', detail: '生成演示数据', who: '系统', at: Date.now() }],
+    employees: withTenant(employees),
+    contracts: withTenant(contracts),
+    attendances: withTenant(attendances),
+    payrolls: withTenant(payrolls),
+    socials: withTenant(socials),
+    certs: withTenant(certs),
+    settings, users, tenants, accounts,
+    audit: [{ _id: 'au0', action: '初始化', detail: '生成演示数据与内置账号', who: '系统', at: Date.now() }],
   };
 }
 

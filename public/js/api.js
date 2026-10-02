@@ -1,7 +1,29 @@
-/* 前端接口封装 */
+/* 前端接口封装（自动带登录令牌） */
 const API = (() => {
+  const TOKEN_KEY = 'yg_token';
+
+  function getToken() {
+    try {
+      return localStorage.getItem(TOKEN_KEY) || '';
+    } catch (e) {
+      return '';
+    }
+  }
+  function setToken(t) {
+    try {
+      localStorage.setItem(TOKEN_KEY, t);
+    } catch (e) {}
+  }
+  function clearToken() {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+    } catch (e) {}
+  }
+
   async function req(method, path, body) {
     const opt = { method, headers: {} };
+    const tk = getToken();
+    if (tk) opt.headers.Authorization = 'Bearer ' + tk;
     if (body !== undefined) {
       opt.headers['Content-Type'] = 'application/json';
       opt.body = JSON.stringify(body);
@@ -14,15 +36,29 @@ const API = (() => {
     } catch (e) {
       throw new Error('返回不是 JSON：' + t.slice(0, 120));
     }
+    if (r.status === 401 && j.needLogin) {
+      clearToken();
+      if (window.APP && APP.onNeedLogin) APP.onNeedLogin();
+      throw new Error('登录已过期，请重新登录');
+    }
     if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
     return j;
   }
 
   return {
+    getToken, setToken, clearToken,
+
     get: (p) => req('GET', p),
     post: (p, b) => req('POST', p, b),
     put: (p, b) => req('PUT', p, b),
     del: (p) => req('DELETE', p),
+
+    // 账号
+    login: (o) => req('POST', '/api/auth/login', o),
+    register: (o) => req('POST', '/api/auth/register', o),
+    join: (o) => req('POST', '/api/auth/join', o),
+    logout: () => req('POST', '/api/auth/logout', {}),
+    me: () => req('GET', '/api/auth/me'),
 
     // 通用集合
     list: (col, filter = {}) => {
