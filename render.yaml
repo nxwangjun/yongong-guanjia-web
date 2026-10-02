@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: yongong-guanjia
+    runtime: node
+    plan: free
+    # 零第三方依赖，无需构建命令
+    buildCommand: ""
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: LLM_BASE_URL
+        value: https://api.openai-next.com/v1
+      - key: LLM_MODEL
+        value: deepseek-v3
+      # 密钥不写进仓库，部署后在面板里手动填
+      - key: LLM_API_KEY
+        sync: false
