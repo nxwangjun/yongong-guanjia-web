@@ -41,6 +41,49 @@ const COL2MOD = {
   invites: 'invite', users: 'member', accounts: 'member', tenants: 'setting', audit: 'audit',
 };
 
+// 导出到 Excel 的字段（k=字段名，t=中文表头，d=日期字段）
+const EXPORT_FIELDS = {
+  employees: [
+    { k: 'name', t: '姓名' }, { k: 'empNo', t: '工号' }, { k: 'dept', t: '部门' },
+    { k: 'entryDate', t: '入职日期', d: 1 }, { k: 'status', t: '在职状态' },
+  ],
+  contracts: [
+    { k: 'employeeId', t: '员工ID' }, { k: 'type', t: '合同类型' },
+    { k: 'months', t: '期限(月)' }, { k: 'probationMonths', t: '试用期(月)' },
+    { k: 'signDate', t: '签订日期', d: 1 }, { k: 'endDate', t: '到期日期', d: 1 },
+  ],
+  attendances: [
+    { k: 'employeeId', t: '员工ID' }, { k: 'month', t: '月份' },
+    { k: 'overtimeHours', t: '加班小时' }, { k: 'hours', t: '出勤小时' },
+  ],
+  payrolls: [
+    { k: 'employeeId', t: '员工ID' }, { k: 'month', t: '月份' }, { k: 'amount', t: '月工资' },
+    { k: 'overtimePay', t: '加班费' }, { k: 'probation', t: '试用期工资' },
+    { k: 'formalAmount', t: '转正工资' },
+  ],
+  socials: [
+    { k: 'employeeId', t: '员工ID' }, { k: 'insured', t: '已参保' }, { k: 'base', t: '缴纳基数' },
+  ],
+  certs: [
+    { k: 'employeeId', t: '员工ID' }, { k: 'name', t: '证照名称' },
+    { k: 'no', t: '证书编号' }, { k: 'expireDate', t: '有效期至', d: 1 },
+  ],
+  riskItems: [
+    { k: 'ruleId', t: '规则号' }, { k: 'risk', t: '风险点' }, { k: 'owner', t: '归口' },
+    { k: 'assignee', t: '责任人' }, { k: 'dueDate', t: '期限', d: 1 }, { k: 'todoStatus', t: '状态' },
+  ],
+};
+
+// Excel 表名 ↔ 集合名
+const SHEET_LABEL = {
+  employees: '员工', contracts: '劳动合同', attendances: '考勤', payrolls: '薪资',
+  socials: '社保', certs: '证照', riskItems: '风险处置',
+};
+const SHEET2COL = {};
+Object.keys(SHEET_LABEL).forEach((k) => {
+  SHEET2COL[SHEET_LABEL[k]] = k;
+});
+
 // 无需登录即可访问的接口
 const PUBLIC_API = ['/api/health'];
 
@@ -69,6 +112,16 @@ function readBody(req) {
         reject(new Error('请求体不是合法 JSON'));
       }
     });
+    req.on('error', reject);
+  });
+}
+
+/** 读原始二进制请求体（用于上传 Excel / CSV） */
+function readRaw(req) {
+  return new Promise((resolve, reject) => {
+    const parts = [];
+    req.on('data', (c) => parts.push(c));
+    req.on('end', () => resolve(Buffer.concat(parts)));
     req.on('error', reject);
   });
 }
@@ -186,6 +239,15 @@ const server = http.createServer(async (req, res) => {
       });
       db.log('配置大模型', b.apiKey ? '已更新 API Key' : '清空 API Key');
       return sendJson(res, 200, { ok: true, llmEnabled: config.LLM_ENABLED, model: config.LLM_MODEL });
+    }
+
+    /* ---------- 地区用工环境（最低工资） ---------- */
+    if (pathname === '/api/regions') {
+      const region = require('./src/region');
+      return sendJson(res, 200, {
+        updated: region.DATA_UPDATED || '',
+        regions: region.names().map((n) => region.profileOf(n)),
+      });
     }
 
     if (pathname === '/api/settings') {
@@ -316,6 +378,125 @@ const server = http.createServer(async (req, res) => {
       if (!q) return sendJson(res, 400, { error: '缺少问题内容' });
       const result = await chat({ question: q, history: Array.isArray(b.history) ? b.history : [] });
       return sendJson(res, 200, result);
+    }
+
+    /* ---------- 导出 Excel ---------- */
+    if (pathname === '/api/export.xlsx') {
+      const xlsx = require('./src/xlsx');
+      const d = db.load();
+      const sheets = [];
+      Object.keys(EXPORT_FIELDS).forEach((col) => {
+        const spec = EXPORT_FIELDS[col];
+        const items = auth.byTenant(d[col] || [], sess);
+        const rows = [spec.map((f) => f.t)];
+        items.forEach((it) =>
+          rows.push(
+            spec.map((f) => {
+              const v = it[f.k];
+              if (f.d) return v ? new Date(Number(v)).toISOString().slice(0, 10) : '';
+              if (typeof v === 'boolean') return v ? '是' : '否';
+              return v === undefined || v === null ? '' : v;
+            })
+          )
+        );
+        sheets.push({ name: SHEET_LABEL[col] || col, rows });
+      });
+      const buf = xlsx.buildXlsx(sheets);
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': 'attachment; filename="yongong-' + new Date().toISOString().slice(0, 10) + '.xlsx"',
+        'Content-Length': buf.length,
+      });
+      return res.end(buf);
+    }
+
+    /* ---------- 导出 CSV（单个集合） ---------- */
+    if (pathname === '/api/export.csv') {
+      const xlsx = require('./src/xlsx');
+      const col = searchParams.get('col') || 'employees';
+      const spec = EXPORT_FIELDS[col];
+      if (!spec) return sendJson(res, 400, { error: '不支持的集合：' + col });
+      const d = db.load();
+      const items = auth.byTenant(d[col] || [], sess);
+      const rows = [spec.map((f) => f.t)];
+      items.forEach((it) =>
+        rows.push(
+          spec.map((f) => {
+            const v = it[f.k];
+            if (f.d) return v ? new Date(Number(v)).toISOString().slice(0, 10) : '';
+            if (typeof v === 'boolean') return v ? '是' : '否';
+            return v === undefined || v === null ? '' : v;
+          })
+        )
+      );
+      const text = '\uFEFF' + xlsx.rowsToCsv(rows); // BOM：Excel/WPS 打开不乱码
+      const body = Buffer.from(text, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="' + col + '.csv"',
+        'Content-Length': body.length,
+      });
+      return res.end(body);
+    }
+
+    /* ---------- 上传文件导入（xlsx / csv） ---------- */
+    if (pathname === '/api/import/file' && req.method === 'POST') {
+      const xlsx = require('./src/xlsx');
+      const type = (searchParams.get('type') || '').toLowerCase();
+      const raw = await readRaw(req);
+      const cur = db.load();
+      let imported = 0;
+      const detail = [];
+
+      function writeCol(col, rows) {
+        const spec = EXPORT_FIELDS[col];
+        if (!spec || !rows.length) return;
+        const header = rows[0].map((h) => String(h).trim());
+        const idx = spec.map((f) => header.indexOf(f.t));
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r.some((x) => String(x || '').trim() !== '')) continue;
+          const obj = { tenantId: sess ? sess.tenantId : '' };
+          spec.forEach((f, fi) => {
+            const j = idx[fi];
+            if (j < 0) return;
+            let v = r[j];
+            if (f.d) {
+              const t = v ? new Date(String(v) + 'T00:00:00').getTime() : 0;
+              obj[f.k] = isNaN(t) ? 0 : t;
+            } else if (typeof v === 'string' && /^\d+$/.test(v) && f.k !== 'empNo' && f.k !== 'no') {
+              obj[f.k] = Number(v);
+            } else {
+              obj[f.k] = v;
+            }
+          });
+          // 布尔字段：Excel 里写「是/否」
+          if (obj.insured !== undefined) obj.insured = /是|true|1|yes/i.test(String(obj.insured));
+          if (obj.probation !== undefined) obj.probation = /是|true|1|yes/i.test(String(obj.probation));
+          db.add(col, obj);
+          imported++;
+        }
+        detail.push(col + '：' + (rows.length - 1) + ' 行');
+      }
+
+      if (type === 'xlsx') {
+        const sheets = xlsx.parseXlsx(raw);
+        sheets.forEach((sh) => {
+          const col = SHEET2COL[sh.name];
+          if (col) writeCol(col, sh.rows);
+        });
+        if (!imported) return sendJson(res, 400, { error: '未识别到可导入的工作表（表头需为导出时的中文表头）' });
+      } else if (type === 'csv') {
+        const col = searchParams.get('col') || 'employees';
+        const rows = xlsx.csvToRows(raw.toString('utf8'));
+        writeCol(col, rows);
+      } else {
+        return sendJson(res, 400, { error: '不支持的文件类型：' + type });
+      }
+
+      db.save();
+      db.log('导入文件', `${type}：${imported} 条`, sess ? sess.name : '系统');
+      return sendJson(res, 200, { ok: true, imported, detail });
     }
 
     /* ---------- 导入导出 ---------- */

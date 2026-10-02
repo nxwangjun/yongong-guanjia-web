@@ -224,57 +224,118 @@ PAGES.audit = {
 PAGES.dataio = {
   title: '数据导入导出',
   async render(c) {
+    const COLS = [
+      ['employees', '员工'], ['contracts', '劳动合同'], ['attendances', '考勤'],
+      ['payrolls', '薪资'], ['socials', '社保'], ['certs', '证照'], ['riskItems', '风险处置'],
+    ];
     c.innerHTML = `
       <div class="card">
-        <h2>导出</h2>
-        <p style="color:var(--muted);font-size:13px">把全部业务数据导出为 JSON 备份文件。</p>
-        <button class="btn primary" id="exp">导出全部数据</button>
+        <h2>导出（Excel / WPS 可直接打开）</h2>
+        <p style="color:var(--muted);font-size:13px">
+          导出 7 张表（员工、劳动合同、考勤、薪资、社保、证照、风险处置），表头为中文，改完可直接导回。
+        </p>
+        <div class="toolbar">
+          <button class="btn primary" id="expXlsx">导出 Excel（.xlsx）</button>
+          <button class="btn" id="expJson">导出 JSON 备份</button>
+        </div>
+        <div class="toolbar" style="margin-top:10px">
+          <span style="font-size:13px;color:var(--muted)">单表导出 CSV：</span>
+          <select id="csvCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
+            ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
+          </select>
+          <button class="btn" id="expCsv">导出 CSV</button>
+        </div>
       </div>
+
       <div class="card">
         <h2>导入</h2>
-        <p style="color:var(--muted);font-size:13px">选择之前导出的 JSON 文件恢复数据（同名集合会被覆盖）。</p>
-        <input type="file" id="file" accept="application/json" />
-        <div class="toolbar" style="margin-top:10px"><button class="btn" id="imp">确认导入</button></div>
+        <p style="color:var(--muted);font-size:13px">
+          <b>.xlsx</b>：按工作表名自动对应（员工 / 劳动合同 / 考勤 / 薪资 / 社保 / 证照 / 风险处置），表头需与导出时一致。<br/>
+          <b>.csv</b>：单表导入，需在下边选择对应表；CSV 也是 Excel / WPS 能直接打开编辑的格式。
+        </p>
+        <input type="file" id="file" accept=".xlsx,.csv,.json" />
+        <div class="toolbar" style="margin-top:10px">
+          <span style="font-size:13px;color:var(--muted)">CSV 导入到：</span>
+          <select id="impCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
+            ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
+          </select>
+          <button class="btn primary" id="impBtn">确认导入</button>
+        </div>
+        <p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">
+          导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。
+        </p>
       </div>
+
       <div class="card">
         <h2>恢复演示数据</h2>
-        <p style="color:var(--muted);font-size:13px">清空当前数据，恢复为内置的 12 人演示数据（含 9 类预埋风险）。</p>
+        <p style="color:var(--muted);font-size:13px">清空当前公司数据，恢复为内置的 12 人演示数据（含 9 类预埋风险）。</p>
         <button class="btn danger" id="rst">恢复演示数据</button>
       </div>`;
 
-    c.querySelector('#exp').onclick = async () => {
+    // 导出
+    c.querySelector('#expXlsx').onclick = () => {
+      window.location.href = '/api/export.xlsx?token=' + encodeURIComponent(API.getToken());
+      UI.toast('已开始下载 Excel');
+    };
+    c.querySelector('#expCsv').onclick = () => {
+      const col = c.querySelector('#csvCol').value;
+      window.location.href = '/api/export.csv?col=' + col + '&token=' + encodeURIComponent(API.getToken());
+    };
+    c.querySelector('#expJson').onclick = async () => {
       const data = await API.exportAll();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = '用工管家数据备份_' + new Date().toISOString().slice(0, 10) + '.json';
+      a.download = '用工管家备份_' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
-      UI.toast('已导出');
+      UI.toast('已导出 JSON');
     };
 
+    // 导入
     let picked = null;
     c.querySelector('#file').onchange = (e) => {
       const f = e.target.files[0];
       if (!f) return;
-      const rd = new FileReader();
-      rd.onload = () => {
-        try {
-          picked = JSON.parse(rd.result);
-          UI.toast('文件已读取，点击确认导入');
-        } catch (x) {
-          UI.toast('文件不是合法 JSON');
-        }
-      };
-      rd.readAsText(f);
+      picked = f;
+      UI.toast('已选择：' + f.name);
     };
-    c.querySelector('#imp').onclick = async () => {
+
+    c.querySelector('#impBtn').onclick = async () => {
       if (!picked) return UI.toast('请先选择文件');
-      const r = await API.importAll(picked);
-      UI.toast('已导入 ' + r.imported + ' 条');
-      setTimeout(() => location.reload(), 600);
+      const name = picked.name.toLowerCase();
+      try {
+        if (name.endsWith('.xlsx')) {
+          const buf = await picked.arrayBuffer();
+          const r = await fetch(
+            '/api/import/file?type=xlsx&token=' + encodeURIComponent(API.getToken()),
+            { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: buf }
+          ).then((x) => x.json());
+          if (r.error) return UI.toast(r.error);
+          UI.toast('已导入 ' + r.imported + ' 条：' + (r.detail || []).join('，'));
+        } else if (name.endsWith('.csv')) {
+          const text = await picked.text();
+          const col = c.querySelector('#impCol').value;
+          const r = await fetch(
+            '/api/import/file?type=csv&col=' + col + '&token=' + encodeURIComponent(API.getToken()),
+            { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text }
+          ).then((x) => x.json());
+          if (r.error) return UI.toast(r.error);
+          UI.toast('已导入 ' + r.imported + ' 条');
+        } else if (name.endsWith('.json')) {
+          const obj = JSON.parse(await picked.text());
+          const r = await API.importAll(obj);
+          UI.toast('已导入 ' + r.imported + ' 条');
+        } else {
+          return UI.toast('只支持 .xlsx / .csv / .json');
+        }
+        setTimeout(() => location.reload(), 800);
+      } catch (e) {
+        UI.toast('导入失败：' + e.message);
+      }
     };
+
     c.querySelector('#rst').onclick = () =>
-      UI.confirmBox('将清空当前全部数据，恢复演示数据，确定？', async () => {
+      UI.confirmBox('将清空当前公司全部数据，恢复演示数据，确定？', async () => {
         await API.reset();
         UI.toast('已恢复');
         setTimeout(() => location.reload(), 600);
@@ -286,24 +347,52 @@ PAGES.dataio = {
 PAGES.setting = {
   title: '系统设置',
   async render(c) {
-    const [s, h] = await Promise.all([API.settings(), API.health()]);
+    const [s, h, rg] = await Promise.all([
+      API.settings(), API.health(),
+      API.get('/api/regions').catch(() => ({ regions: [] })),
+    ]);
+    const regions = rg.regions || [];
+    const cur = s.region || '';
+
+    // 已存地区在列表里没有（比如手填过的"宁夏银川"），补一个自定义项
+    const inList = regions.some((r) => r.name === cur || cur.indexOf(r.name) === 0);
+
     c.innerHTML = `
       <div class="card">
         <h2>企业信息</h2>
         <div class="form-grid">
           <label>企业名称<input id="companyName" value="${UI.esc(s.companyName || '')}" /></label>
-          <label>企业规模<input id="companySize" value="${UI.esc(s.companySize || '')}" /></label>
-          <label>所属行业<input id="industry" value="${UI.esc(s.industry || '')}" /></label>
-          <label>所在地区<input id="region" value="${UI.esc(s.region || '')}" /></label>
+          <label>所在地区
+            <select id="region">
+              <option value="">（未选择）</option>
+              ${regions
+                .map(
+                  (r) =>
+                    `<option value="${UI.esc(r.name)}" ${
+                      cur && (cur === r.name || cur.indexOf(r.name) === 0) ? 'selected' : ''
+                    }>${UI.esc(r.name)}</option>`
+                )
+                .join('')}
+              ${!inList && cur ? `<option value="${UI.esc(cur)}" selected>${UI.esc(cur)}（自定义）</option>` : ''}
+            </select>
+          </label>
         </div>
+        <div id="regionInfo" style="margin-top:12px"></div>
       </div>
+
       <div class="card">
         <h2>风险判定阈值</h2>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+          选好地区后，下方会自动带出当地的用工标准（最低工资等），带出的数字可以手工改。
+        </p>
         <div class="form-grid">
+          <label>当地最低工资（元/月）<input id="minWage" type="number" value="${UI.esc(s.minWage ?? 0)}" /></label>
+          <label>最低工资档位
+            <select id="tierSel"><option value="">（手动填写时不选）</option></select>
+          </label>
           <label>签约期限（天，超过即算未签合同）<input id="signDeadlineDays" type="number" value="${UI.esc(s.signDeadlineDays ?? 30)}" /></label>
           <label>合同到期提醒（天）<input id="contractExpireDays" type="number" value="${UI.esc(s.contractExpireDays ?? 30)}" /></label>
           <label>月加班上限（小时）<input id="overtimeLimitMonth" type="number" value="${UI.esc(s.overtimeLimitMonth ?? 36)}" /></label>
-          <label>当地最低工资（元/月）<input id="minWage" type="number" value="${UI.esc(s.minWage ?? 0)}" /></label>
           <label>证照到期提醒（天）<input id="certExpireDays" type="number" value="${UI.esc(s.certExpireDays ?? 30)}" /></label>
         </div>
         <div class="toolbar" style="margin-top:12px"><button class="btn primary" id="save">保存设置</button></div>
@@ -324,12 +413,56 @@ PAGES.setting = {
         </div>
       </div>`;
 
+    // ---- 地区 → 自动带出当地用工标准 ----
+    const regionSel = c.querySelector('#region');
+    const infoBox = c.querySelector('#regionInfo');
+    const tierSel = c.querySelector('#tierSel');
+    const minWageInput = c.querySelector('#minWage');
+    const CN = ['一', '二', '三', '四', '五'];
+    // 当前选中的地区若带档位，默认把档位下拉选到与已存 minWage 相同的那个
+    let curRegion = regionSel.value;
+
+    function applyRegion(name, autoFill) {
+      const r = regions.filter((x) => x.name === name)[0];
+      if (!r) {
+        infoBox.innerHTML = '';
+        tierSel.innerHTML = '<option value="">（手动填写时不选）</option>';
+        return;
+      }
+      tierSel.innerHTML =
+        '<option value="">（手动填写时不选）</option>' +
+        r.tiers
+          .map((v, i) => `<option value="${v}">第${CN[i] || i + 1}档 · ${v} 元</option>`)
+          .join('');
+      if (autoFill) minWageInput.value = r.first;
+      else {
+        const hit = r.tiers.filter((v) => String(v) === String(minWageInput.value))[0];
+        if (hit) tierSel.value = String(hit);
+      }
+      infoBox.innerHTML = `
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px">
+          <b>${UI.esc(r.name)}</b> 现行月最低工资：
+          ${r.tiers.map((v, i) => `<span class="tag blue">${CN[i] || i + 1}档 ${v} 元</span>`).join(' ')}
+          ${r.note ? `<div style="color:var(--muted);margin-top:4px">${UI.esc(r.note)}</div>` : ''}
+          ${r.pending
+            ? `<div style="color:#b45309;margin-top:4px">⚠ ${UI.esc(r.pending.from)} 起执行新标准 ${r.pending.tiers.join(' / ')} 元，到生效日自动切换，不会提前误判</div>`
+            : ''}
+          ${r.source
+            ? `<div style="color:var(--muted);margin-top:4px;font-size:12px">来源：${UI.esc(r.source)}　数据口径 ${UI.esc(rg.updated || '')}</div>`
+            : ''}
+        </div>`;
+    }
+
+    regionSel.onchange = () => applyRegion(regionSel.value, true);
+    tierSel.onchange = () => {
+      if (tierSel.value) minWageInput.value = tierSel.value;
+    };
+    applyRegion(curRegion, false);
+
     const num = (id) => Number(c.querySelector('#' + id).value) || 0;
     c.querySelector('#save').onclick = async () => {
       await API.saveSettings({
         companyName: c.querySelector('#companyName').value,
-        companySize: c.querySelector('#companySize').value,
-        industry: c.querySelector('#industry').value,
         region: c.querySelector('#region').value,
         signDeadlineDays: num('signDeadlineDays'),
         contractExpireDays: num('contractExpireDays'),

@@ -77,9 +77,6 @@ const APP = (() => {
             <tr><td style="color:var(--muted)">风险规则</td><td>116 条（10 条由数据自动算出，105 条需台账或问卷）</td></tr>
             <tr><td style="color:var(--muted)">自检环节</td><td>${h.quizCategories ?? 0} 个</td></tr>
           </table>
-        </div>
-        <div class="notice">
-          ⚠️ 本工具是把需要律师的人筛出来的「筛子」，不替代律师下结论；结论仅供参考，不构成正式法律意见。
         </div>`;
     },
   };
