@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+.DS_Store
+# 运行时业务数据（首次启动自动生成演示数据）
+data/db.json
