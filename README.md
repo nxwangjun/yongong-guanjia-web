@@ -2,6 +2,10 @@
 
 > 面向中小企业与律所的**企业用工合规管理系统**：录入用工数据 → 116 条劳动法规则自动扫描 → 风险下钻到具体的人 → 派发整改闭环 → AI 用人话解读并给出可执行整改步骤。
 
+- **在线体验**：https://yongong-guanjia-production.up.railway.app
+- **代码仓库**：https://github.com/nxwangjun/yongong-guanjia-web
+- 许可：MIT　|　AI 能力：真实大模型（RAG 检索增强，模型 `deepseek-v3`）
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
