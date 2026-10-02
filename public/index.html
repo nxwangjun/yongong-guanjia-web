@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>用工管家 · 企业用工合规管理</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-brand">
+      <span class="mark">⚖</span>
+      <div>
+        <b>用工管家</b>
+        <small id="sideCompany">企业用工合规管理</small>
+      </div>
+    </div>
+    <nav id="sideNav"></nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="tb-left">
+        <button class="burger" id="btnMenu">☰</button>
+        <h1 id="pageTitle">首页</h1>
+      </div>
+      <div class="tb-right">
+        <span class="status" id="statusBadge"><span class="dot"></span><span id="statusText">连接中…</span></span>
+        <button class="btn small" id="btnQuickScan">一键风险扫描</button>
+      </div>
+    </header>
+    <main class="content" id="content">加载中…</main>
+  </div>
+</div>
+
+<div class="modal-mask" id="modalMask">
+  <div class="modal" id="modalBox"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/pages/hr.js"></script>
+<script src="js/pages/risk.js"></script>
+<script src="js/pages/flow.js"></script>
+<script src="js/pages/system.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
