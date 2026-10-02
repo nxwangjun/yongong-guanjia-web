@@ -230,26 +230,26 @@ function seed() {
   ];
 
   const attendances = [
-    { _id: 'a05', employeeId: 'e05', month: '2026-09', overtimeHours: 40 },
-    { _id: 'a08', employeeId: 'e08', month: '2026-09', overtimeHours: 38 },
-    { _id: 'a07', employeeId: 'e07', month: '2026-09', overtimeHours: 12 },
-    { _id: 'a09', employeeId: 'e09', month: '2026-09', overtimeHours: 6 },
+    { _id: 'a05', employeeId: 'e05', month: '2026-09', overtimeHours: 40, hours: 176 },
+    { _id: 'a08', employeeId: 'e08', month: '2026-09', overtimeHours: 38, hours: 174 },
+    { _id: 'a07', employeeId: 'e07', month: '2026-09', overtimeHours: 12, hours: 168 },
+    { _id: 'a09', employeeId: 'e09', month: '2026-09', overtimeHours: 6, hours: 160 },
     // e14 加班 45 小时超上限
-    { _id: 'a14', employeeId: 'e14', month: '2026-09', overtimeHours: 45 },
+    { _id: 'a14', employeeId: 'e14', month: '2026-09', overtimeHours: 45, hours: 184 },
     // e16 加班 42 小时超上限
-    { _id: 'a16', employeeId: 'e16', month: '2026-09', overtimeHours: 42 },
+    { _id: 'a16', employeeId: 'e16', month: '2026-09', overtimeHours: 42, hours: 180 },
     // e21 加班 20 小时（正常）
-    { _id: 'a21', employeeId: 'e21', month: '2026-09', overtimeHours: 20 },
+    { _id: 'a21', employeeId: 'e21', month: '2026-09', overtimeHours: 20, hours: 172 },
     // e24 加班 50 小时超上限
-    { _id: 'a24', employeeId: 'e24', month: '2026-09', overtimeHours: 50 },
+    { _id: 'a24', employeeId: 'e24', month: '2026-09', overtimeHours: 50, hours: 188 },
     // e26 加班 39 小时超上限
-    { _id: 'a26', employeeId: 'e26', month: '2026-09', overtimeHours: 39 },
+    { _id: 'a26', employeeId: 'e26', month: '2026-09', overtimeHours: 39, hours: 176 },
     // e29 加班 25 小时（正常）
-    { _id: 'a29', employeeId: 'e29', month: '2026-09', overtimeHours: 25 },
+    { _id: 'a29', employeeId: 'e29', month: '2026-09', overtimeHours: 25, hours: 170 },
     // e32 加班 15 小时（正常）
-    { _id: 'a32', employeeId: 'e32', month: '2026-09', overtimeHours: 15 },
+    { _id: 'a32', employeeId: 'e32', month: '2026-09', overtimeHours: 15, hours: 166 },
     // e35 加班 55 小时超上限
-    { _id: 'a35', employeeId: 'e35', month: '2026-09', overtimeHours: 55 },
+    { _id: 'a35', employeeId: 'e35', month: '2026-09', overtimeHours: 55, hours: 190 },
   ];
 
   const payrolls = [
