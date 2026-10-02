@@ -256,13 +256,15 @@ function seed() {
     );
   };
 
-  // 内置演示账号（不同角色，用于验证数据范围：all / dept / self）
+  // 内置演示账号（五个默认主体各一个，用于验证模块权限与数据范围）
   const accounts = [
-    mkAccount('admin', 'admin123', '王军（管理员）', 'admin', {}),
-    mkAccount('hr', 'hr123', '张 HR', 'hr', { dept: '综合部' }),
-    mkAccount('legal', 'legal123', '李法务', 'legal', {}),
+    mkAccount('admin', 'admin123', '王军', 'admin', {}),
+    mkAccount('hr', 'hr123', '张人事', 'hr', { dept: '综合部' }),
+    mkAccount('legal', 'legal123', '李法务', 'legal', { dept: '综合部' }),
+    // 部门负责人：工程部，审批中心只看指派给自己的
+    mkAccount('approver', 'approver123', '陈主管', 'approver', { dept: '工程部', employeeId: 'e08' }),
     // 普通员工：绑定员工档案 e05（吴九），数据范围 self → 只能看到自己
-    mkAccount('staff', 'staff123', '吴九（员工）', 'staff', { dept: '工程部', employeeId: 'e05' }),
+    mkAccount('staff', 'staff123', '吴九', 'staff', { dept: '工程部', employeeId: 'e05' }),
   ];
 
   // 业务数据挂上公司 ID

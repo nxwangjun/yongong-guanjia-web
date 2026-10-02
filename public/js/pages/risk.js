@@ -178,7 +178,7 @@ PAGES.riskrule = {
 
 /* ============ 法务确认台账 ============ */
 PAGES.riskconfirm = {
-  title: '法务确认台账',
+  title: '合规自查',
   async render(c) {
     const [rd, dbConfirms] = await Promise.all([API.rules(), API.list('confirms')]);
     const rules = (rd.rules || []).filter((r) => r.level !== 'auto');
@@ -188,12 +188,13 @@ PAGES.riskconfirm = {
     c.innerHTML = `
       <div class="card">
         <div class="toolbar">
-          <h2 style="margin:0">法务确认台账（${rules.length} 条）</h2>
+          <h2 style="margin:0">合规自查（${rules.length} 条）</h2>
           <div class="spacer"></div>
           <input class="search" id="kw" placeholder="搜索…" />
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          系统算不出的项目，由法务定期确认。答「没做到」的会进入风险清单。
+          系统算不出的项目，在这里逐条确认（原「确认台账」与「自检问卷」已合并为一处）。
+          答「没做到」的会直接进入风险清单。
         </p>
         <div id="list"></div>
       </div>`;

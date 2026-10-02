@@ -3,21 +3,27 @@ const APP = (() => {
   const GROUPS = [
     { name: '工作台', items: [['home', '首页']] },
     { name: '管人', items: [['staff', '员工档案'], ['contract', '合同管理'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证照资质']] },
-    { name: '法务风险', items: [['risk', '风险清单'], ['riskrule', '规则配置'], ['riskconfirm', '确认台账'], ['risktodo', '风险处置'], ['survey', '自检问卷'], ['ai', 'AI 问答']] },
+    // 自检问卷已并入「合规自查（确认台账）」，不再单列
+    { name: '法务风险', items: [['risk', '风险清单'], ['riskrule', '规则配置'], ['riskconfirm', '合规自查'], ['risktodo', '风险处置'], ['ai', 'AI 问答']] },
     { name: '流程', items: [['apply', '申请中心'], ['approve', '审批中心'], ['flowdesign', '流程编排']] },
     { name: '系统', items: [['role', '角色权限'], ['member', '成员账户'], ['invite', '邀请成员'], ['layout', '模块编排'], ['audit', '审计日志'], ['dataio', '数据导入导出'], ['setting', '系统设置']] },
   ];
 
-  const ROLE_NAMES = { admin: '管理员', hr: '人力资源', legal: '法务', approver: '审批人', staff: '普通员工' };
+  const DEFAULT_ROLE_NAMES = { admin: '管理员', hr: '人力资源', staff: '普通员工', approver: '部门负责人', legal: '法务' };
 
-  // 未手动配置权限时的出厂默认（与服务端 src/auth.js 保持一致）
+  // 五个主体的出厂模块权限（与服务端 src/auth.js 保持一致），管理员可在「角色权限」改
   const DEFAULT_MODULES = {
-    hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'risk', 'risktodo', 'survey'],
-    legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'survey', 'ai'],
-    approver: ['home', 'approve'],
-    // 员工可自助查看「自己」的档案/合同/考勤/薪资/社保/证照，服务端配合 scope=self 只返回本人数据
-    staff: ['home', 'apply', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert'],
+    hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'apply', 'approve'],
+    legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai', 'apply', 'approve'],
+    approver: ['home', 'apply', 'approve'],
+    staff: ['home', 'apply'],
   };
+
+  // 管理员可改主体名称，改后全局生效
+  let roleNames = null;
+  function roleLabel(role) {
+    return (roleNames && roleNames[role]) || DEFAULT_ROLE_NAMES[role] || role || '';
+  }
 
   let roleModules = null;
 
@@ -45,7 +51,7 @@ const APP = (() => {
         <div class="card">
           <h2>${UI.esc(u.companyName || h.companyName || '企业用工合规管理')}</h2>
           <p style="color:var(--muted);margin:0">
-            当前身份：<b>${UI.esc(u.name || '')}</b>（${UI.esc(ROLE_NAMES[u.role] || u.role || '')}）· 可见范围：${UI.esc(scopeTxt)}
+            当前身份：<b>${UI.esc(u.name || '')}</b>（${UI.esc(roleLabel(u.role))}）· 可见范围：${UI.esc(scopeTxt)}
           </p>
           <p style="color:var(--muted);margin:6px 0 0">
             录入员工、合同、考勤、薪资、社保数据 → 系统按 116 条规则自动扫描 → 风险下钻到具体人 → 派发整改 → AI 解读。
@@ -62,7 +68,7 @@ const APP = (() => {
           <div class="toolbar">
             <button class="btn primary" onclick="location.hash='#/risk'">查看风险清单</button>
             <button class="btn" onclick="location.hash='#/staff'">录入员工</button>
-            <button class="btn" onclick="location.hash='#/survey'">做自检问卷</button>
+            <button class="btn" onclick="location.hash='#/riskconfirm'">做合规自查</button>
             <button class="btn" onclick="location.hash='#/ai'">问 AI 劳动法问题</button>
             <button class="btn" onclick="location.hash='#/setting'">系统设置</button>
           </div>
@@ -98,10 +104,11 @@ const APP = (() => {
     document.querySelector('.sidebar').style.display = '';
     document.getElementById('btnQuickScan').style.display = '';
 
-    // 读取权限配置，用于侧边栏过滤
+    // 读取权限配置与主体名称，用于侧边栏过滤与显示
     try {
       const s = await API.settings();
       roleModules = s.roleModules || null;
+      roleNames = s.roleNames || null;
     } catch (e) {}
 
     renderUserBar();
@@ -120,7 +127,7 @@ const APP = (() => {
     ub.style.display = 'flex';
     const u = me.user || {};
     ub.innerHTML =
-      `<span class="tag blue">${UI.esc(u.name || '')} · ${UI.esc(ROLE_NAMES[u.role] || u.role || '')}</span>` +
+      `<span class="tag blue">${UI.esc(u.name || '')} · ${UI.esc(roleLabel(u.role))}</span>` +
       `<button class="btn small" id="btnLogout">退出</button>`;
     document.getElementById('btnLogout').onclick = async () => {
       try {
@@ -193,13 +200,15 @@ const APP = (() => {
     if (key !== 'home' && !canModule(role, key)) {
       document.getElementById('pageTitle').textContent = '无访问权限';
       document.getElementById('content').innerHTML =
-        `<div class="card"><h2>无访问权限</h2><p>当前角色（${UI.esc(ROLE_NAMES[role] || role)}）没有「${
+        `<div class="card"><h2>无访问权限</h2><p>当前主体（${UI.esc(roleLabel(role))}）没有「${
           (PAGES[key] || {}).title || key
         }」模块的权限。可在「角色权限」里由管理员调整。</p></div>`;
       return;
     }
 
-    const page = PAGES[key] || PAGES.home;
+    // 自检问卷已并入「合规自查」，旧链接自动指向合并后的页面
+    let page = PAGES[key] || PAGES.home;
+    if (key === 'survey') page = PAGES.riskconfirm;
     document.title = '用工管家 · ' + page.title;
     document.getElementById('pageTitle').textContent = page.title;
     document.querySelectorAll('.nav-item').forEach((el) =>

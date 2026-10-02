@@ -11,7 +11,30 @@ const ALL_MODULES = [
   ['layout', '模块编排'], ['audit', '审计日志'], ['dataio', '数据导入导出'], ['setting', '系统设置'],
 ];
 
-const ROLES = [['admin', '管理员'], ['hr', '人力资源'], ['legal', '法务'], ['approver', '审批人'], ['staff', '普通员工']];
+const ROLES = [
+  ['admin', '管理员'], ['hr', '人力资源'], ['legal', '法务'], ['approver', '部门负责人'], ['staff', '普通员工'],
+];
+const DEFAULT_ROLE_NAMES = {
+  admin: '管理员', hr: '人力资源', legal: '法务', approver: '部门负责人', staff: '普通员工',
+};
+
+/** 主体（角色）下拉选项：优先用管理员改过的名称 */
+async function roleOptions(includeAdmin) {
+  let names = {};
+  try {
+    const s = await API.settings();
+    names = s.roleNames || {};
+  } catch (e) {}
+  return ROLES
+    .filter((r) => includeAdmin || r[0] !== 'admin')
+    .map((r) => [r[0], names[r[0]] || DEFAULT_ROLE_NAMES[r[0]] || r[1]]);
+}
+
+function roleLabelMap(names) {
+  return function (role) {
+    return (names && names[role]) || DEFAULT_ROLE_NAMES[role] || role;
+  };
+}
 
 /* ============ 角色权限 ============ */
 PAGES.role = {
@@ -19,14 +42,33 @@ PAGES.role = {
   async render(c) {
     const s = await API.settings();
     const map = s.roleModules || {};
+    const names = s.roleNames || {};
+    const label = roleLabelMap(names);
+
     c.innerHTML = `
       <div class="card">
-        <h2>角色与模块挂载</h2>
+        <h2>主体名称</h2>
         <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
-          勾选后该角色可见可用。管理员天然拥有全部权限，无需勾选。
+          改成你们公司习惯的叫法（如把「人力资源」改成「人事部」），改完全局生效。
+        </p>
+        <div class="form-grid">
+          ${ROLES.map(
+            (r) => `<label>${UI.esc(DEFAULT_ROLE_NAMES[r[0]])}　<small style="color:var(--muted)">${r[0]}</small>
+              <input data-rn="${r[0]}" value="${UI.esc(names[r[0]] || DEFAULT_ROLE_NAMES[r[0]])}" /></label>`
+          ).join('')}
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="saveNames">保存主体名称</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>主体与模块权限</h2>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
+          勾选后该主体可见可用。管理员天然拥有全部权限，无需勾选。
         </p>
         <table class="tbl">
-          <thead><tr><th>模块</th>${ROLES.map((r) => `<th style="width:88px">${r[1]}</th>`).join('')}</tr></thead>
+          <thead><tr><th>模块</th>${ROLES.map((r) => `<th style="width:88px">${UI.esc(label(r[0]))}</th>`).join('')}</tr></thead>
           <tbody>
             ${ALL_MODULES.map(
               (m) => `<tr>
@@ -46,6 +88,16 @@ PAGES.role = {
         </div>
       </div>`;
 
+    c.querySelector('#saveNames').onclick = async () => {
+      const next = {};
+      c.querySelectorAll('[data-rn]').forEach((inp) => {
+        next[inp.dataset.rn] = inp.value.trim() || DEFAULT_ROLE_NAMES[inp.dataset.rn];
+      });
+      await API.saveSettings({ roleNames: next });
+      UI.toast('主体名称已保存');
+      setTimeout(() => location.reload(), 600);
+    };
+
     c.querySelector('#save').onclick = async () => {
       const next = {};
       ROLES.forEach((r) => (next[r[0]] = []));
@@ -62,15 +114,16 @@ PAGES.role = {
 /* ============ 成员账户 ============ */
 PAGES.member = {
   title: '成员账户',
-  render(c) {
+  async render(c) {
+    const opts = await roleOptions(true);
     return UI.crudPage(c, {
       title: '成员账号',
       col: 'accounts',
-      desc: '公司成员的真实登录账号。改角色即改权限；停用后该账号无法登录。',
+      desc: '公司成员的真实登录账号。改主体即改权限；改部门影响部门负责人可见范围；停用后无法登录。',
       fields: [
         { k: 'username', t: '登录账号', type: 'text', required: true },
         { k: 'name', t: '姓名', type: 'text', required: true },
-        { k: 'role', t: '角色', type: 'select', options: ROLES },
+        { k: 'role', t: '主体（角色）', type: 'select', options: opts },
         { k: 'dept', t: '所属部门', type: 'text' },
         { k: 'employeeId', t: '关联员工档案ID', type: 'text' },
         { k: 'enabled', t: '启用', type: 'select', options: [['1', '是'], ['0', '否']] },
@@ -83,18 +136,32 @@ PAGES.member = {
 PAGES.invite = {
   title: '邀请成员',
   async render(c) {
-    const list = await API.list('invites');
+    const [list, roleOpts] = await Promise.all([API.list('invites'), roleOptions(false)]);
+    const MOD_LABEL = {
+      home: '首页', staff: '员工档案', contract: '合同管理', attend: '考勤工时', payroll: '薪资',
+      social: '社保', cert: '证照资质', risk: '风险清单', riskrule: '规则配置',
+      riskconfirm: '合规自查', risktodo: '风险处置', ai: 'AI 问答',
+      apply: '申请中心', approve: '审批中心', flowdesign: '流程编排',
+    };
+    const DEFAULT_MODS = {
+      hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'apply', 'approve'],
+      legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai', 'apply', 'approve'],
+      approver: ['home', 'apply', 'approve'],
+      staff: ['home', 'apply'],
+    };
+
     c.innerHTML = `
       <div class="card">
         <div class="toolbar"><h2 style="margin:0">邀请成员</h2><div class="spacer"></div>
           <select id="invRole" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
-            ${ROLES.filter((r) => r[0] !== 'admin').map((r) => `<option value="${r[0]}">${r[1]}</option>`).join('')}
+            ${roleOpts.map((r) => `<option value="${r[0]}">${UI.esc(r[1])}</option>`).join('')}
           </select>
           <input class="search" id="invDept" placeholder="所属部门（可空）" style="width:150px" />
           <button class="btn primary" id="gen">生成邀请码</button></div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          生成的码发给成员，他在登录页选「邀请码加入」，填码注册后自动进入本公司并拿到对应角色。
+          生成的码发给成员，他在登录页选「邀请码加入」，填码注册后自动进入本公司并获得该主体的权限。
         </p>
+        <div id="roleTip" style="font-size:13px;color:var(--muted)"></div>
         <table class="tbl">
           <thead><tr><th>邀请码</th><th style="width:110px">创建时间</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
           <tbody>
@@ -113,6 +180,16 @@ PAGES.invite = {
           </tbody>
         </table>
       </div>`;
+    function showRoleTip() {
+      const r = c.querySelector('#invRole').value;
+      const mods = DEFAULT_MODS[r] || [];
+      c.querySelector('#roleTip').innerHTML = mods.length
+        ? `该主体默认可见模块：<b>${mods.map((m) => MOD_LABEL[m] || m).join('、')}</b>（生成后仍可在「角色权限」里调整）`
+        : '';
+    }
+    c.querySelector('#invRole').onchange = showRoleTip;
+    showRoleTip();
+
     c.querySelector('#gen').onclick = async () => {
       const code = Math.random().toString(36).slice(2, 8).toUpperCase();
       await API.add('invites', {

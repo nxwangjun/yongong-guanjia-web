@@ -241,6 +241,35 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, llmEnabled: config.LLM_ENABLED, model: config.LLM_MODEL });
     }
 
+    /* ---------- 审批候选人：按申请类型给出可选的审批人 ---------- */
+    if (pathname === '/api/approver-candidates') {
+      // 申请类型 → 由哪个主体（角色）来批
+      const TYPE2ROLE = {
+        leave: 'approver', ot: 'approver', trip: 'approver', expense: 'approver',
+        contract_review: 'legal',
+      };
+      const type = searchParams.get('type') || 'leave';
+      const wantRole = TYPE2ROLE[type] || 'approver';
+      const all = auth.byTenant(db.list('accounts'), sess)
+        .filter((a) => a.enabled !== false);
+
+      let cand = all.filter(
+        (a) => a.role === wantRole && a._id !== sess.userId && a.role !== 'admin'
+      );
+      // 同部门优先；候选人不足时放宽到同部门其他非管理员成员
+      if (!cand.length) {
+        cand = all.filter((a) => a._id !== sess.userId && a.role !== 'admin');
+      }
+      return sendJson(res, 200, {
+        role: wantRole,
+        roleName: auth.roleName(wantRole),
+        candidates: cand.map((a) => ({
+          _id: a._id, name: a.name, role: a.role,
+          roleName: auth.roleName(a.role), dept: a.dept || '',
+        })),
+      });
+    }
+
     /* ---------- 地区用工环境（最低工资） ---------- */
     if (pathname === '/api/regions') {
       const region = require('./src/region');
@@ -544,11 +573,26 @@ const server = http.createServer(async (req, res) => {
         let items = db.list(name, filter);
         items = auth.byTenant(items, sess);            // 公司隔离
         items = auth.applyScope(items, name, sess);    // 数据范围：全部/本部门/仅本人
+        // 申请单：员工只看自己发起的，部门负责人只看指派给自己批的，管理类角色看全部
+        if (name === 'applies' && sess) {
+          if (sess.role === 'staff') {
+            items = items.filter((a) => a.applicantId === sess.userId);
+          } else if (sess.role === 'approver') {
+            items = items.filter((a) => a.approverId === sess.userId);
+          }
+        }
         return sendJson(res, 200, { items });
       }
       if (req.method === 'POST') {
         const b = await readBody(req);
         if (sess) b.tenantId = sess.tenantId;
+        // 申请单：自动记录发起人，并写入初始状态
+        if (name === 'applies' && sess) {
+          b.applicantId = sess.userId;
+          b.applicantName = sess.name;
+          b.applicantDept = sess.dept || '';
+          b.status = b.status || 'pending';
+        }
         const obj = db.add(name, b);
         db.log('新增', `${name}:${obj._id}`, sess ? sess.name : '系统');
         return sendJson(res, 200, obj);

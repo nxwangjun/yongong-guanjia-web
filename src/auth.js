@@ -22,6 +22,35 @@ const EMPTY_SCOPE_COLLECTIONS = ['employees', 'contracts', 'attendances', 'payro
 
 const DEFAULT_SCOPE = { admin: 'all', hr: 'all', legal: 'all', approver: 'dept', staff: 'self' };
 
+// 五个默认主体（= 角色）的出厂模块权限，管理员可在「角色权限」里改
+// 管理员：全部；人力资源：管人 6 模块 + 申请 + 审批；法务：法务风险 + 申请 + 审批
+// 部门负责人：申请 + 审批；普通员工：仅申请
+const DEFAULT_MODULES = {
+  admin: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert',
+    'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai',
+    'apply', 'approve', 'flowdesign', 'role', 'member', 'invite', 'layout', 'audit', 'dataio', 'setting'],
+  hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'apply', 'approve'],
+  legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai', 'apply', 'approve'],
+  approver: ['home', 'apply', 'approve'],
+  staff: ['home', 'apply'],
+};
+
+// 主体默认名称，管理员可在「系统设置」里改
+const DEFAULT_ROLE_NAMES = {
+  admin: '管理员', hr: '人力资源', staff: '普通员工', approver: '部门负责人', legal: '法务',
+};
+
+/** 主体（角色）显示名：优先用管理员改过的，其次出厂默认 */
+function roleName(role) {
+  const s = db.load().settings || {};
+  const names = s.roleNames || {};
+  return names[role] || DEFAULT_ROLE_NAMES[role] || role || '';
+}
+function roleNames() {
+  const s = db.load().settings || {};
+  return Object.assign({}, DEFAULT_ROLE_NAMES, s.roleNames || {});
+}
+
 function hashPwd(pwd, salt) {
   return crypto.scryptSync(String(pwd), salt, 64).toString('hex');
 }
@@ -148,20 +177,11 @@ function roleModules() {
 /** 该角色能否访问某模块（管理员恒为 true） */
 function canModule(role, mod) {
   if (role === 'admin') return true;
-  const map = roleModules();
+  const s = db.load().settings || {};
+  const map = s.roleModules || {};
   const list = map[role];
-  // 未配置时按出厂默认：hr 看管人+风险，legal 看法务，approver 看审批，staff 看申请+首页
-  if (!list) {
-    const DEFAULT = {
-      hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'risk', 'risktodo', 'survey'],
-      legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'survey', 'ai'],
-      approver: ['home', 'approve'],
-      // 员工可自助查看「自己」的档案/合同/考勤/薪资/社保/证照，配合 scope=self 只返回本人数据
-      staff: ['home', 'apply', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert'],
-    };
-    return (DEFAULT[role] || ['home']).includes(mod);
-  }
-  return list.includes(mod);
+  // 未配置时按出厂默认
+  return (list || DEFAULT_MODULES[role] || ['home']).includes(mod);
 }
 
 /** 该角色的数据范围 */
@@ -211,6 +231,7 @@ function byTenant(items, sess) {
 
 module.exports = {
   registerAdmin, join, login, logout, session,
-  canModule, scopeOf, applyScope, byTenant, roleModules,
-  hashPwd, newSalt, publicUser, tenantOf, DEFAULT_SCOPE,
+  canModule, scopeOf, applyScope, byTenant, roleModules, roleName, roleNames,
+  hashPwd, newSalt, publicUser, tenantOf,
+  DEFAULT_SCOPE, DEFAULT_MODULES, DEFAULT_ROLE_NAMES,
 };

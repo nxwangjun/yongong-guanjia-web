@@ -34,11 +34,12 @@ PAGES.login = {
         </div>
 
         <div class="card" style="background:#f8fafc">
-          <h3 style="font-size:13.5px">演示账号（用于体验不同角色的权限与数据范围）</h3>
+          <h3 style="font-size:13.5px">演示账号（五个默认主体各一个，用来体验不同权限与数据范围）</h3>
           <table class="tbl" style="font-size:12.5px">
             <tr><td>管理员</td><td><code>admin</code> / <code>admin123</code></td><td>全部模块 · 全部数据</td></tr>
-            <tr><td>人力资源</td><td><code>hr</code> / <code>hr123</code></td><td>管人+风险 · 全部数据</td></tr>
-            <tr><td>法务</td><td><code>legal</code> / <code>legal123</code></td><td>法务模块 · 全部数据</td></tr>
+            <tr><td>人力资源</td><td><code>hr</code> / <code>hr123</code></td><td>管人 6 模块 + 申请 + 审批 · 全部数据</td></tr>
+            <tr><td>法务</td><td><code>legal</code> / <code>legal123</code></td><td>法务风险 + 申请 + 审批 · 全部数据</td></tr>
+            <tr><td>部门负责人</td><td><code>approver</code> / <code>approver123</code></td><td>申请 + 审批 · <b>本部门数据</b></td></tr>
             <tr><td>普通员工</td><td><code>staff</code> / <code>staff123</code></td><td>申请中心 · <b>仅本人数据</b></td></tr>
           </table>
         </div>
