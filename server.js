@@ -1,5 +1,5 @@
 /**
- * 用工管家 AI Agent —— Web 服务端
+ * 小哲用工风险检测系统 —— Web 服务端
  *
  * 零第三方依赖：仅用 Node 内置 http 模块，clone 下来无需 npm install 即可运行。
  * AI 能力走真实大模型（OpenAI 兼容协议），密钥可在页面「系统设置」里随时粘贴、立即生效。
@@ -29,7 +29,7 @@ const MIME = {
 
 const COLLECTIONS = [
   'employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs',
-  'confirms', 'surveys', 'riskItems', 'applies', 'approvals', 'flows',
+  'confirms', 'surveys', 'riskItems',
   'users', 'members', 'invites', 'audit', 'tenants', 'accounts',
 ];
 
@@ -37,8 +37,8 @@ const COLLECTIONS = [
 const COL2MOD = {
   employees: 'staff', contracts: 'contract', attendances: 'attend',
   payrolls: 'payroll', socials: 'social', certs: 'cert',
-  riskItems: 'risktodo', applies: 'apply', approvals: 'approve', flows: 'flowdesign',
-  invites: 'invite', users: 'member', accounts: 'member', tenants: 'setting', audit: 'audit',
+  riskItems: 'risktodo',
+  invites: 'member', users: 'member', accounts: 'member', tenants: 'setting', audit: 'setting',
 };
 
 // 导出到 Excel 的字段（k=字段名，t=中文表头，d=日期字段）
@@ -241,35 +241,6 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, llmEnabled: config.LLM_ENABLED, model: config.LLM_MODEL });
     }
 
-    /* ---------- 审批候选人：按申请类型给出可选的审批人 ---------- */
-    if (pathname === '/api/approver-candidates') {
-      // 申请类型 → 由哪个主体（角色）来批
-      const TYPE2ROLE = {
-        leave: 'approver', ot: 'approver', trip: 'approver', expense: 'approver',
-        contract_review: 'legal',
-      };
-      const type = searchParams.get('type') || 'leave';
-      const wantRole = TYPE2ROLE[type] || 'approver';
-      const all = auth.byTenant(db.list('accounts'), sess)
-        .filter((a) => a.enabled !== false);
-
-      let cand = all.filter(
-        (a) => a.role === wantRole && a._id !== sess.userId && a.role !== 'admin'
-      );
-      // 同部门优先；候选人不足时放宽到同部门其他非管理员成员
-      if (!cand.length) {
-        cand = all.filter((a) => a._id !== sess.userId && a.role !== 'admin');
-      }
-      return sendJson(res, 200, {
-        role: wantRole,
-        roleName: auth.roleName(wantRole),
-        candidates: cand.map((a) => ({
-          _id: a._id, name: a.name, role: a.role,
-          roleName: auth.roleName(a.role), dept: a.dept || '',
-        })),
-      });
-    }
-
     /* ---------- 地区用工环境（最低工资） ---------- */
     if (pathname === '/api/regions') {
       const region = require('./src/region');
@@ -320,6 +291,37 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/scan') {
       const items = scan(snapshot(sess));
       return sendJson(res, 200, { items, at: Date.now() });
+    }
+
+    /* ---------- 按员工维度聚合风险（核心价值：每个人的用工风险画像） ---------- */
+    if (pathname === '/api/risk/by-employee') {
+      const d = db.load();
+      const items = scan(snapshot(sess));
+      const emps = auth.byTenant(d.employees || [], sess);
+      const out = emps.map((e) => {
+        const risks = [];
+        items.forEach((it) => {
+          (it.people || []).forEach((p) => {
+            if (p.employeeId === e._id) {
+              risks.push({
+                ruleId: it.ruleId, risk: it.risk, sev: it.sev, detail: p.detail,
+                catLabel: it.catLabel, law: it.law,
+                consequence: it.consequence, remedy: it.remedy,
+              });
+            }
+          });
+        });
+        return {
+          _id: e._id, name: e.name, dept: e.dept || '', status: e.status || 'on',
+          entryDate: e.entryDate, empNo: e.empNo || '',
+          riskCount: risks.length,
+          highCount: risks.filter((r) => r.sev === '高').length,
+          risks,
+        };
+      });
+      // 风险多的排前面
+      out.sort((a, b) => b.highCount - a.highCount || b.riskCount - a.riskCount);
+      return sendJson(res, 200, { employees: out, at: Date.now() });
     }
 
     if (pathname === '/api/quiz') {
@@ -379,12 +381,12 @@ const server = http.createServer(async (req, res) => {
       const exist = d.riskItems.filter((x) => x.ruleId === b.ruleId && x.todoStatus !== 'done');
       if (exist.length) return sendJson(res, 200, { ok: true, duplicated: true, item: exist[0] });
       const item = db.add('riskItems', {
-        ruleId: b.ruleId, risk: b.risk || '', owner: b.owner || 'hr',
+        ruleId: b.ruleId, risk: b.risk || '', owner: b.owner || 'admin',
         assignee: b.assignee || '', dueDate: b.dueDate || '',
         todoStatus: 'pending', note: b.note || '',
         tenantId: sess ? sess.tenantId : '',
       });
-      db.log('派发风险处置', `${b.ruleId} → ${b.owner || 'hr'}`);
+      db.log('派发风险处置', `${b.ruleId} → ${b.owner || 'admin'}`);
       return sendJson(res, 200, { ok: true, item });
     }
 
@@ -572,27 +574,11 @@ const server = http.createServer(async (req, res) => {
         });
         let items = db.list(name, filter);
         items = auth.byTenant(items, sess);            // 公司隔离
-        items = auth.applyScope(items, name, sess);    // 数据范围：全部/本部门/仅本人
-        // 申请单：员工只看自己发起的，部门负责人只看指派给自己批的，管理类角色看全部
-        if (name === 'applies' && sess) {
-          if (sess.role === 'staff') {
-            items = items.filter((a) => a.applicantId === sess.userId);
-          } else if (sess.role === 'approver') {
-            items = items.filter((a) => a.approverId === sess.userId);
-          }
-        }
         return sendJson(res, 200, { items });
       }
       if (req.method === 'POST') {
         const b = await readBody(req);
         if (sess) b.tenantId = sess.tenantId;
-        // 申请单：自动记录发起人，并写入初始状态
-        if (name === 'applies' && sess) {
-          b.applicantId = sess.userId;
-          b.applicantName = sess.name;
-          b.applicantDept = sess.dept || '';
-          b.status = b.status || 'pending';
-        }
         const obj = db.add(name, b);
         db.log('新增', `${name}:${obj._id}`, sess ? sess.name : '系统');
         return sendJson(res, 200, obj);
@@ -620,7 +606,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log('===============================================');
-  console.log(' 用工管家 AI Agent（网页版）已启动');
+  console.log(' 小哲用工风险检测系统（网页版）已启动');
   console.log(` 访问地址： http://localhost:${PORT}`);
   console.log(` 知识库：   ${corpus.length} 条 · 规则 116 条 · 自检 ${quiz.length} 环节`);
   console.log(

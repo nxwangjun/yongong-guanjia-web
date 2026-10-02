@@ -1,299 +1,98 @@
-/* 系统模块：角色权限 / 成员账户 / 邀请成员 / 模块编排 / 审计日志 / 数据导入导出 / 系统设置 */
+/* 系统模块：成员账户（含邀请）/ 数据导入导出 / 系统设置（两角色：管理员 + 普通用户） */
 window.PAGES = window.PAGES || {};
-
-const ALL_MODULES = [
-  ['home', '首页'], ['staff', '员工档案'], ['contract', '合同管理'], ['attend', '考勤工时'],
-  ['payroll', '薪资'], ['social', '社保'], ['cert', '证照资质'],
-  ['risk', '风险清单'], ['riskrule', '规则配置'], ['riskconfirm', '确认台账'],
-  ['risktodo', '风险处置'], ['survey', '自检问卷'], ['ai', 'AI 问答'],
-  ['apply', '申请中心'], ['approve', '审批中心'], ['flowdesign', '流程编排'],
-  ['role', '角色权限'], ['member', '成员账户'], ['invite', '邀请成员'],
-  ['layout', '模块编排'], ['audit', '审计日志'], ['dataio', '数据导入导出'], ['setting', '系统设置'],
-];
-
-const ROLES = [
-  ['admin', '管理员'], ['hr', '人力资源'], ['legal', '法务'], ['approver', '部门负责人'], ['staff', '普通员工'],
-];
-const DEFAULT_ROLE_NAMES = {
-  admin: '管理员', hr: '人力资源', legal: '法务', approver: '部门负责人', staff: '普通员工',
-};
-
-/** 主体（角色）下拉选项：优先用管理员改过的名称 */
-async function roleOptions(includeAdmin) {
-  let names = {};
-  try {
-    const s = await API.settings();
-    names = s.roleNames || {};
-  } catch (e) {}
-  return ROLES
-    .filter((r) => includeAdmin || r[0] !== 'admin')
-    .map((r) => [r[0], names[r[0]] || DEFAULT_ROLE_NAMES[r[0]] || r[1]]);
-}
-
-function roleLabelMap(names) {
-  return function (role) {
-    return (names && names[role]) || DEFAULT_ROLE_NAMES[role] || role;
-  };
-}
-
-/* ============ 角色权限 ============ */
-PAGES.role = {
-  title: '角色权限',
-  async render(c) {
-    const s = await API.settings();
-    const map = s.roleModules || {};
-    const names = s.roleNames || {};
-    const label = roleLabelMap(names);
-
-    c.innerHTML = `
-      <div class="card">
-        <h2>主体名称</h2>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
-          改成你们公司习惯的叫法（如把「人力资源」改成「人事部」），改完全局生效。
-        </p>
-        <div class="form-grid">
-          ${ROLES.map(
-            (r) => `<label>${UI.esc(DEFAULT_ROLE_NAMES[r[0]])}　<small style="color:var(--muted)">${r[0]}</small>
-              <input data-rn="${r[0]}" value="${UI.esc(names[r[0]] || DEFAULT_ROLE_NAMES[r[0]])}" /></label>`
-          ).join('')}
-        </div>
-        <div class="toolbar" style="margin-top:12px">
-          <button class="btn primary" id="saveNames">保存主体名称</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>主体与模块权限</h2>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
-          勾选后该主体可见可用。管理员天然拥有全部权限，无需勾选。
-        </p>
-        <table class="tbl">
-          <thead><tr><th>模块</th>${ROLES.map((r) => `<th style="width:88px">${UI.esc(label(r[0]))}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${ALL_MODULES.map(
-              (m) => `<tr>
-              <td>${m[1]} <small style="color:var(--muted)">${m[0]}</small></td>
-              ${ROLES.map(
-                (r) => `<td><input type="checkbox" data-m="${m[0]}" data-r="${r[0]}" ${
-                  (map[r[0]] || []).includes(m[0]) ? 'checked' : ''
-                } ${r[0] === 'admin' ? 'disabled checked' : ''} /></td>`
-              ).join('')}
-            </tr>`
-            ).join('')}
-          </tbody>
-        </table>
-        <div class="toolbar" style="margin-top:12px">
-          <button class="btn primary" id="save">保存权限配置</button>
-          <span class="tag gray">权限按「角色 → 模块」两级控制</span>
-        </div>
-      </div>`;
-
-    c.querySelector('#saveNames').onclick = async () => {
-      const next = {};
-      c.querySelectorAll('[data-rn]').forEach((inp) => {
-        next[inp.dataset.rn] = inp.value.trim() || DEFAULT_ROLE_NAMES[inp.dataset.rn];
-      });
-      await API.saveSettings({ roleNames: next });
-      UI.toast('主体名称已保存');
-      setTimeout(() => location.reload(), 600);
-    };
-
-    c.querySelector('#save').onclick = async () => {
-      const next = {};
-      ROLES.forEach((r) => (next[r[0]] = []));
-      c.querySelectorAll('[data-m]').forEach((cb) => {
-        if (cb.checked) next[cb.dataset.r].push(cb.dataset.m);
-      });
-      next.admin = ALL_MODULES.map((m) => m[0]);
-      await API.saveSettings({ roleModules: next });
-      UI.toast('权限已保存');
-    };
-  },
-};
 
 /* ============ 成员账户 ============ */
 PAGES.member = {
   title: '成员账户',
   async render(c) {
-    const opts = await roleOptions(true);
-    return UI.crudPage(c, {
-      title: '成员账号',
-      col: 'accounts',
-      desc: '公司成员的真实登录账号。改主体即改权限；改部门影响部门负责人可见范围；停用后无法登录。',
-      fields: [
-        { k: 'username', t: '登录账号', type: 'text', required: true },
-        { k: 'name', t: '姓名', type: 'text', required: true },
-        { k: 'role', t: '主体（角色）', type: 'select', options: opts },
-        { k: 'dept', t: '所属部门', type: 'text' },
-        { k: 'employeeId', t: '关联员工档案ID', type: 'text' },
-        { k: 'enabled', t: '启用', type: 'select', options: [['1', '是'], ['0', '否']] },
-      ],
-    });
-  },
-};
-
-/* ============ 邀请成员 ============ */
-PAGES.invite = {
-  title: '邀请成员',
-  async render(c) {
-    const [list, roleOpts] = await Promise.all([API.list('invites'), roleOptions(false)]);
-    const MOD_LABEL = {
-      home: '首页', staff: '员工档案', contract: '合同管理', attend: '考勤工时', payroll: '薪资',
-      social: '社保', cert: '证照资质', risk: '风险清单', riskrule: '规则配置',
-      riskconfirm: '合规自查', risktodo: '风险处置', ai: 'AI 问答',
-      apply: '申请中心', approve: '审批中心', flowdesign: '流程编排',
-    };
-    const DEFAULT_MODS = {
-      hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'apply', 'approve'],
-      legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai', 'apply', 'approve'],
-      approver: ['home', 'apply', 'approve'],
-      staff: ['home', 'apply'],
-    };
-
+    const list = await API.list('accounts');
+    const roleLabel = (r) => (r === 'admin' ? '管理员' : '普通用户');
     c.innerHTML = `
       <div class="card">
-        <div class="toolbar"><h2 style="margin:0">邀请成员</h2><div class="spacer"></div>
-          <select id="invRole" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
-            ${roleOpts.map((r) => `<option value="${r[0]}">${UI.esc(r[1])}</option>`).join('')}
-          </select>
-          <input class="search" id="invDept" placeholder="所属部门（可空）" style="width:150px" />
-          <button class="btn primary" id="gen">生成邀请码</button></div>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          生成的码发给成员，他在登录页选「邀请码加入」，填码注册后自动进入本公司并获得该主体的权限。
+        <h2>成员账号</h2>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
+          系统只有两个角色：<b>管理员</b>（注册时创建，全部权限）与<b>普通用户</b>（可录数据、看检测、用 AI，不能进本页和系统设置）。停用后该账号无法登录。
         </p>
-        <div id="roleTip" style="font-size:13px;color:var(--muted)"></div>
         <table class="tbl">
-          <thead><tr><th>邀请码</th><th style="width:110px">创建时间</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
-          <tbody>
-            ${list.length
-              ? list
-                  .map(
-                    (i) => `<tr>
-                  <td>${UI.esc(i.code)} <span class="tag blue">${UI.esc((ROLES.filter((r) => r[0] === i.role)[0] || ['', i.role || 'staff'])[1])}</span></td>
-                  <td>${UI.fmtDate(i.createdAt)}</td>
-                  <td>${i.used ? '<span class="tag gray">已使用</span>' : '<span class="tag green">有效</span>'}</td>
-                  <td><button class="btn small danger" data-del="${i._id}">吊销</button></td>
-                </tr>`
-                  )
-                  .join('')
-              : '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">暂无邀请码</td></tr>'}
-          </tbody>
-        </table>
-      </div>`;
-    function showRoleTip() {
-      const r = c.querySelector('#invRole').value;
-      const mods = DEFAULT_MODS[r] || [];
-      c.querySelector('#roleTip').innerHTML = mods.length
-        ? `该主体默认可见模块：<b>${mods.map((m) => MOD_LABEL[m] || m).join('、')}</b>（生成后仍可在「角色权限」里调整）`
-        : '';
-    }
-    c.querySelector('#invRole').onchange = showRoleTip;
-    showRoleTip();
-
-    c.querySelector('#gen').onclick = async () => {
-      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-      await API.add('invites', {
-        code,
-        role: c.querySelector('#invRole').value,
-        dept: c.querySelector('#invDept').value.trim(),
-        used: false,
-      });
-      UI.toast('已生成：' + code + '（把它发给成员）');
-      PAGES.invite.render(c);
-    };
-    c.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
-      await API.remove('invites', b.dataset.del);
-      UI.toast('已吊销');
-      PAGES.invite.render(c);
-    }));
-  },
-};
-
-/* ============ 模块编排 ============ */
-PAGES.layout = {
-  title: '模块编排',
-  async render(c) {
-    const s = await API.settings();
-    const hidden = s.hiddenModules || [];
-    const order = s.moduleOrder || [];
-    const mods = ALL_MODULES.slice().sort((a, b) => {
-      const ia = order.indexOf(a[0]);
-      const ib = order.indexOf(b[0]);
-      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
-    });
-    c.innerHTML = `
-      <div class="card">
-        <div class="toolbar"><h2 style="margin:0">模块编排</h2><div class="spacer"></div>
-          <button class="btn primary" id="save">保存编排</button></div>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">控制侧边栏模块的显隐与排序。</p>
-        <table class="tbl">
-          <thead><tr><th style="width:60px">显示</th><th>模块</th><th style="width:150px">排序</th></tr></thead>
-          <tbody>
-            ${mods
-              .map(
-                (m, i) => `<tr data-key="${m[0]}">
-              <td><input type="checkbox" data-vis="${m[0]}" ${hidden.includes(m[0]) ? '' : 'checked'} /></td>
-              <td>${m[1]}</td>
-              <td><button class="btn small" data-up="${m[0]}">↑</button> <button class="btn small" data-down="${m[0]}">↓</button></td>
-            </tr>`
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </div>`;
-
-    const move = (key, dir) => {
-      const keys = [...c.querySelectorAll('[data-key]')].map((tr) => tr.dataset.key);
-      const i = keys.indexOf(key);
-      const j = i + dir;
-      if (j < 0 || j >= keys.length) return;
-      [keys[i], keys[j]] = [keys[j], keys[i]];
-      // 重排 DOM
-      const tb = c.querySelector('tbody');
-      keys.forEach((k) => tb.appendChild(tb.querySelector(`[data-key="${k}"]`)));
-    };
-    c.querySelectorAll('[data-up]').forEach((b) => (b.onclick = () => move(b.dataset.up, -1)));
-    c.querySelectorAll('[data-down]').forEach((b) => (b.onclick = () => move(b.dataset.down, 1)));
-    c.querySelector('#save').onclick = async () => {
-      const hid = [];
-      c.querySelectorAll('[data-vis]').forEach((cb) => {
-        if (!cb.checked) hid.push(cb.dataset.vis);
-      });
-      const ord = [...c.querySelectorAll('[data-key]')].map((tr) => tr.dataset.key);
-      await API.saveSettings({ hiddenModules: hid, moduleOrder: ord });
-      UI.toast('已保存，刷新后生效');
-      setTimeout(() => location.reload(), 600);
-    };
-  },
-};
-
-/* ============ 审计日志（只读） ============ */
-PAGES.audit = {
-  title: '审计日志',
-  async render(c) {
-    const list = await API.list('audit');
-    c.innerHTML = `
-      <div class="card">
-        <div class="toolbar"><h2 style="margin:0">审计日志（只读）</h2><div class="spacer"></div>
-          <span class="tag gray">${list.length} 条</span></div>
-        <table class="tbl">
-          <thead><tr><th style="width:160px">时间</th><th style="width:120px">操作人</th><th style="width:120px">动作</th><th>详情</th></tr></thead>
+          <thead><tr><th>姓名</th><th>登录账号</th><th style="width:90px">角色</th><th style="width:110px">部门</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
           <tbody>
             ${list.length
               ? list
                   .map(
                     (a) => `<tr>
-                  <td>${UI.fmtDate(a.at)} ${new Date(a.at).toTimeString().slice(0, 8)}</td>
-                  <td>${UI.esc(a.who || '系统')}</td>
-                  <td>${UI.esc(a.action)}</td>
-                  <td>${UI.esc(a.detail || '')}</td>
+                  <td>${UI.esc(a.name || '')}</td>
+                  <td>${UI.esc(a.username || '')}</td>
+                  <td><span class="tag ${a.role === 'admin' ? 'blue' : 'gray'}">${roleLabel(a.role)}</span></td>
+                  <td>${UI.esc(a.dept || '—')}</td>
+                  <td>${a.enabled === false ? '<span class="tag orange">已停用</span>' : '<span class="tag green">在用</span>'}</td>
+                  <td>${a.role === 'admin' ? '' : `<button class="btn small ${a.enabled === false ? '' : 'danger'}" data-tg="${a._id}" data-en="${a.enabled === false ? '1' : '0'}">${a.enabled === false ? '启用' : '停用'}</button>`}</td>
                 </tr>`
                   )
                   .join('')
-              : '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">暂无日志</td></tr>'}
+              : '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">暂无成员</td></tr>'}
           </tbody>
         </table>
+      </div>
+
+      <div class="card">
+        <div class="toolbar"><h2 style="margin:0">邀请普通用户</h2><div class="spacer"></div>
+          <input class="search" id="invDept" placeholder="所属部门（可空）" style="width:150px" />
+          <button class="btn primary" id="gen">生成邀请码</button></div>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+          把邀请码发给同事，他在登录页选「邀请码加入」，注册后即成为本公司普通用户。
+        </p>
+        <div id="inviteBox"></div>
+        <div id="inviteList" style="margin-top:10px"></div>
       </div>`;
+
+    const renderInvites = async () => {
+      const inv = await API.list('invites');
+      c.querySelector('#inviteList').innerHTML = inv.length
+        ? `<table class="tbl">
+            <thead><tr><th>邀请码</th><th style="width:110px">创建时间</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
+            <tbody>${inv
+              .map(
+                (i) => `<tr>
+                <td><b style="letter-spacing:1px">${UI.esc(i.code)}</b></td>
+                <td>${UI.fmtDate(i.createdAt)}</td>
+                <td>${i.used ? '<span class="tag gray">已使用</span>' : '<span class="tag green">有效</span>'}</td>
+                <td>${i.used ? '' : `<button class="btn small danger" data-del="${i._id}">吊销</button>`}</td>
+              </tr>`
+              )
+              .join('')}</tbody>
+          </table>`
+        : '';
+      c.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
+        await API.remove('invites', b.dataset.del);
+        UI.toast('已吊销');
+        renderInvites();
+      }));
+    };
+    renderInvites();
+
+    c.querySelectorAll('[data-tg]').forEach((b) => (b.onclick = async () => {
+      await API.update('accounts', b.dataset.tg, { enabled: b.dataset.en === '1' });
+      UI.toast(b.dataset.en === '1' ? '已启用' : '已停用');
+      PAGES.member.render(c);
+    }));
+
+    c.querySelector('#gen').onclick = async () => {
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      await API.add('invites', {
+        code,
+        role: 'user',
+        dept: c.querySelector('#invDept').value.trim(),
+        used: false,
+        createdAt: Date.now(),
+      });
+      c.querySelector('#inviteBox').innerHTML = `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;font-size:14px;margin-bottom:10px">
+          邀请码：<b style="font-size:18px;letter-spacing:2px">${code}</b><br/>
+          <span style="color:var(--muted);font-size:13px">让成员在登录页选「邀请码加入」，填此码注册即可。</span>
+        </div>`;
+      UI.toast('已生成：' + code);
+      renderInvites();
+    };
   },
 };
 
@@ -363,7 +162,7 @@ PAGES.dataio = {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = '用工管家备份_' + new Date().toISOString().slice(0, 10) + '.json';
+      a.download = '小哲用工风险检测_备份_' + new Date().toISOString().slice(0, 10) + '.json';
       a.click();
       UI.toast('已导出 JSON');
     };

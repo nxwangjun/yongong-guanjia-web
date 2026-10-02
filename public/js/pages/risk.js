@@ -79,7 +79,7 @@ PAGES.risk = {
       b.onclick = async () => {
         const it = items[b.dataset.dispatch];
         try {
-          const r = await API.dispatch({ ruleId: it.ruleId, risk: it.risk, owner: it.owner || 'hr' });
+          const r = await API.dispatch({ ruleId: it.ruleId, risk: it.risk, owner: 'admin' });
           if (r.duplicated) toast('已在处置台账中，去「风险处置」看进度');
           else toast('已派发到风险处置');
           b.textContent = '已派发';
@@ -144,7 +144,7 @@ PAGES.riskrule = {
           ${rules.filter((r) => r.level === 'ask').length} 条需台账确认或问卷作答。
         </p>
         <table class="tbl">
-          <thead><tr><th style="width:60px">启用</th><th>风险点</th><th style="width:90px">分类</th><th style="width:80px">方式</th><th style="width:70px">归口</th></tr></thead>
+          <thead><tr><th style="width:60px">启用</th><th>风险点</th><th style="width:90px">分类</th><th style="width:80px">方式</th></tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>`;
@@ -160,7 +160,6 @@ PAGES.riskrule = {
             <td>${UI.esc(r.risk)}<br/><small style="color:var(--muted)">${UI.esc(r.id)}</small></td>
             <td>${UI.esc(r.catLabel || r.cat)}</td>
             <td>${r.level === 'auto' ? '数据算出' : r.level === 'hybrid' ? '混合' : '台账/问卷'}</td>
-            <td>${UI.esc(r.owner || '')}</td>
           </tr>`
         )
         .join('');
@@ -256,14 +255,13 @@ PAGES.risktodo = {
           <span class="tag ${open ? 'orange' : 'green'}">待处理 ${open} 条</span>
         </div>
         <table class="tbl">
-          <thead><tr><th>风险点</th><th style="width:80px">归口</th><th style="width:90px">责任人</th><th style="width:110px">期限</th><th style="width:90px">状态</th><th style="width:130px">操作</th></tr></thead>
+          <thead><tr><th>风险点</th><th style="width:90px">责任人</th><th style="width:110px">期限</th><th style="width:90px">状态</th><th style="width:130px">操作</th></tr></thead>
           <tbody>
             ${items.length
               ? items
                   .map(
                     (i) => `<tr>
                   <td>${UI.esc(i.risk)}<br/><small style="color:var(--muted)">${UI.esc(i.ruleId)}</small></td>
-                  <td>${UI.esc(i.owner || '')}</td>
                   <td>${UI.esc(i.assignee || '—')}</td>
                   <td>${UI.fmtDate(i.dueDate)}</td>
                   <td>${i.todoStatus === 'done' ? '<span class="tag green">已关闭</span>' : i.todoStatus === 'doing' ? '<span class="tag blue">整改中</span>' : '<span class="tag orange">待处理</span>'}</td>
@@ -273,7 +271,7 @@ PAGES.risktodo = {
                 </tr>`
                   )
                   .join('')
-              : '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">暂无待处置风险，可在「风险清单」里派发</td></tr>'}
+              : '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">暂无待处置风险，可在「风险清单」里派发</td></tr>'}
           </tbody>
         </table>
       </div>`;
@@ -365,7 +363,7 @@ PAGES.ai = {
       <div class="notice">回答由 AI 基于劳动法知识库检索生成，仅供初步参考，不构成正式法律意见。</div>
       <div class="chat-wrap">
         <div class="chat-msgs" id="msgs">
-          <div class="msg bot"><div class="bubble">你好，我是用工管家的劳动法助手。可以直接问我，例如：
+          <div class="msg bot"><div class="bubble">你好，我是小哲的劳动法助手。可以直接问我，例如：
 · 员工入职后多久必须签书面劳动合同？
 · 试用期最长能约定多久？
 · 未依法缴纳社保会有什么后果？</div></div>

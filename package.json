@@ -2,7 +2,7 @@
   "name": "yongong-guanjia-web",
   "version": "1.0.0",
   "private": true,
-  "description": "用工管家 AI Agent —— 基于检索增强(RAG)的劳动法合规自检与咨询网页应用（AI软件赛道参赛作品）",
+  "description": "小哲用工风险检测系统 —— 基于检索增强(RAG)的劳动法用工风险检测网页应用（AI软件赛道参赛作品）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

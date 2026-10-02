@@ -1,4 +1,4 @@
-/* 临时：账号体系与权限验证 */
+/* 账号体系与权限验证（两角色：admin 管理员 + user 普通用户） */
 const BASE = 'http://localhost:3000';
 
 async function hit(method, path, body, token) {
@@ -51,26 +51,24 @@ async function hit(method, path, body, token) {
   const adminEmps = r.json ? r.json.items.length : 0;
   ok('管理员看全部员工', adminEmps >= 12, adminEmps + ' 人');
 
-  // 6. 普通员工登录（数据范围 self，绑定 e05 吴九）
-  r = await hit('POST', '/api/auth/login', { username: 'staff', password: 'staff123' });
-  const staffToken = r.json && r.json.token;
-  ok('员工登录', r.status === 200 && staffToken, r.json ? r.json.user.name + ' / ' + r.json.user.role : '');
+  // 6. 普通用户登录
+  r = await hit('POST', '/api/auth/login', { username: 'user', password: 'user123' });
+  const userToken = r.json && r.json.token;
+  ok('普通用户登录', r.status === 200 && userToken, r.json ? r.json.user.name + ' / ' + r.json.user.role : '');
 
-  r = await hit('GET', '/api/auth/me', undefined, staffToken);
-  ok('员工数据范围为 self', r.json && r.json.scope === 'self', 'scope=' + (r.json && r.json.scope));
+  r = await hit('GET', '/api/auth/me', undefined, userToken);
+  ok('普通用户数据范围为 all（本公司）', r.json && r.json.scope === 'all', 'scope=' + (r.json && r.json.scope));
 
-  r = await hit('GET', '/api/c/employees', undefined, staffToken);
-  const staffEmps = (r.json && r.json.items) || [];
-  ok('员工只看得到自己', staffEmps.length === 1 && staffEmps[0].name === '吴九',
-    staffEmps.map((e) => e.name).join(',') || '空');
+  r = await hit('GET', '/api/c/employees', undefined, userToken);
+  const userEmps = (r.json && r.json.items) || [];
+  ok('普通用户可看本公司员工', userEmps.length >= 12, userEmps.length + ' 人');
 
-  r = await hit('GET', '/api/c/payrolls', undefined, staffToken);
-  const staffPay = (r.json && r.json.items) || [];
-  ok('员工薪资只见自己的', staffPay.length > 0 && staffPay.every((p) => p.employeeId === 'e05'),
-    staffPay.length + ' 条，均为本人');
+  r = await hit('GET', '/api/c/riskItems', undefined, userToken);
+  ok('普通用户可看风险处置', r.status === 200, 'HTTP ' + r.status);
 
-  r = await hit('GET', '/api/c/riskItems', undefined, staffToken);
-  ok('员工看不到风险处置（无模块权限）', r.status === 403, 'HTTP ' + r.status);
+  // 普通用户不能进系统设置（accounts 集合属 member 模块）
+  r = await hit('GET', '/api/c/accounts', undefined, userToken);
+  ok('普通用户看成员账户被拒', r.status === 403, 'HTTP ' + r.status);
 
   // 7. 注册新公司（租户隔离）
   r = await hit('POST', '/api/auth/register', {
@@ -83,15 +81,15 @@ async function hit(method, path, body, token) {
   const newEmps = r.json ? r.json.items.length : -1;
   ok('新公司数据隔离（看不到别家员工）', newEmps === 0, newEmps + ' 人');
 
-  // 8. 邀请码带角色
-  r = await hit('POST', '/api/c/invites', { code: 'TEST01', role: 'legal', used: false }, adminToken);
-  ok('管理员生成带角色邀请码', r.status === 200 && r.json && r.json.role === 'legal',
-    r.json ? 'role=' + r.json.role : r.text.slice(0, 60));
+  // 8. 邀请码加入即普通用户
+  r = await hit('POST', '/api/c/invites', { code: 'TEST01', role: 'user', used: false }, adminToken);
+  ok('管理员生成邀请码', r.status === 200 && r.json && r.json.code === 'TEST01',
+    r.json ? 'code=' + r.json.code : r.text.slice(0, 60));
 
   r = await hit('POST', '/api/auth/join', {
-    username: 'newlegal', password: 'pwd123', name: '新法务', code: 'TEST01',
+    username: 'newuser', password: 'pwd123', name: '新成员', code: 'TEST01',
   });
-  ok('成员用邀请码加入并继承角色', r.status === 200 && r.json && r.json.user.role === 'legal',
+  ok('成员用邀请码加入即为普通用户', r.status === 200 && r.json && r.json.user.role === 'user',
     r.json ? 'role=' + r.json.user.role + ' 公司=' + r.json.user.companyName : r.text.slice(0, 80));
 
   // 9. 登出

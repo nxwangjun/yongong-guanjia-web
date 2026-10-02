@@ -7,10 +7,10 @@
  *   invite（邀请码）       管理员生成，带角色；成员注册时填码加入
  *   session（登录态）      随机令牌，服务端保存，7 天有效
  *
- * 权限三段（沿用原版设计）：
- *   1. 模块：角色 → 能看哪些模块（settings.roleModules）
- *   2. 操作：本版简化为「有模块权限即可增删改查」，管理员额外拥有全部
- *   3. 数据范围：角色 → all（全部）/ dept（本部门）/ self（仅本人）（settings.roleScope）
+ * 权限模型（两角色）：
+ *   admin 管理员 —— 全部模块
+ *   user  普通用户 —— 除「成员账户 / 系统设置」外的全部模块
+ *   旧库里的 hr/legal/approver/staff 账号统一按普通用户对待（见 DEFAULT_MODULES 兜底）
  *
  * 密码：Node 内置 crypto.scrypt，只存 salt 与 hash，绝不存明文。
  */
@@ -18,37 +18,32 @@ const crypto = require('crypto');
 const db = require('./db');
 
 const TOKEN_DAYS = 7;
-const EMPTY_SCOPE_COLLECTIONS = ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs'];
 
-const DEFAULT_SCOPE = { admin: 'all', hr: 'all', legal: 'all', approver: 'dept', staff: 'self' };
+// 普通用户可见模块（与前端 app.js 的 USER_MODULES 保持一致）
+const USER_MODULES = ['home', 'people', 'risk', 'riskconfirm', 'risktodo', 'riskrule', 'ai',
+  'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'dataio'];
 
-// 五个默认主体（= 角色）的出厂模块权限，管理员可在「角色权限」里改
-// 管理员：全部；人力资源：管人 6 模块 + 申请 + 审批；法务：法务风险 + 申请 + 审批
-// 部门负责人：申请 + 审批；普通员工：仅申请
+// 出厂模块权限：admin 全通；user 及旧角色（hr/legal/approver/staff）均按普通用户
 const DEFAULT_MODULES = {
-  admin: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert',
-    'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai',
-    'apply', 'approve', 'flowdesign', 'role', 'member', 'invite', 'layout', 'audit', 'dataio', 'setting'],
-  hr: ['home', 'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'apply', 'approve'],
-  legal: ['home', 'risk', 'riskrule', 'riskconfirm', 'risktodo', 'ai', 'apply', 'approve'],
-  approver: ['home', 'apply', 'approve'],
-  staff: ['home', 'apply'],
+  admin: USER_MODULES.concat(['member', 'setting']),
+  user: USER_MODULES,
+  hr: USER_MODULES, legal: USER_MODULES, approver: USER_MODULES, staff: USER_MODULES,
 };
 
-// 主体默认名称，管理员可在「系统设置」里改
+// 角色默认名称（两角色；旧角色名也兜底，避免老账号显示成英文）
 const DEFAULT_ROLE_NAMES = {
-  admin: '管理员', hr: '人力资源', staff: '普通员工', approver: '部门负责人', legal: '法务',
+  admin: '管理员', user: '普通用户',
+  hr: '普通用户', legal: '普通用户', approver: '普通用户', staff: '普通用户',
 };
 
-/** 主体（角色）显示名：优先用管理员改过的，其次出厂默认 */
+/** 角色显示名：优先用管理员改过的，其次出厂默认 */
 function roleName(role) {
   const s = db.load().settings || {};
   const names = s.roleNames || {};
   return names[role] || DEFAULT_ROLE_NAMES[role] || role || '';
 }
 function roleNames() {
-  const s = db.load().settings || {};
-  return Object.assign({}, DEFAULT_ROLE_NAMES, s.roleNames || {});
+  return Object.assign({}, DEFAULT_ROLE_NAMES);
 }
 
 function hashPwd(pwd, salt) {
@@ -126,7 +121,7 @@ function join({ username, password, name, code }) {
   const user = db.add('accounts', {
     username, name: name || username, salt,
     passHash: hashPwd(password, salt),
-    role: inv.role || 'staff',
+    role: inv.role === 'admin' ? 'admin' : 'user',
     tenantId: inv.tenantId,
     dept: inv.dept || '',
     enabled: true,
@@ -170,57 +165,18 @@ function session(token) {
 
 /* ---------- 权限 ---------- */
 function roleModules() {
-  const s = db.load().settings || {};
-  return s.roleModules || {};
+  return DEFAULT_MODULES;
 }
 
-/** 该角色能否访问某模块（管理员恒为 true） */
+/** 该角色能否访问某模块（管理员恒为 true；其余一律按普通用户） */
 function canModule(role, mod) {
   if (role === 'admin') return true;
-  const s = db.load().settings || {};
-  const map = s.roleModules || {};
-  const list = map[role];
-  // 未配置时按出厂默认
-  return (list || DEFAULT_MODULES[role] || ['home']).includes(mod);
+  return USER_MODULES.includes(mod);
 }
 
-/** 该角色的数据范围 */
-function scopeOf(role) {
-  const s = db.load().settings || {};
-  const m = s.roleScope || DEFAULT_SCOPE;
-  return m[role] || 'all';
-}
-
-/**
- * 按数据范围过滤（只对员工相关的集合生效）
- * @returns 过滤后的数组
- */
-function applyScope(items, collection, sess) {
-  if (!sess || !EMPTY_SCOPE_COLLECTIONS.includes(collection)) return items;
-  const scope = scopeOf(sess.role);
-  if (scope === 'all') return items;
-
-  // 先按公司隔离
-  let out = items.filter((i) => !i.tenantId || i.tenantId === sess.tenantId);
-
-  if (scope === 'self') {
-    const selfId = sess.employeeId;
-    if (!selfId) return [];
-    if (collection === 'employees') return out.filter((i) => i._id === selfId);
-    return out.filter((i) => i.employeeId === selfId);
-  }
-
-  if (scope === 'dept') {
-    const dept = sess.dept;
-    if (!dept) return [];
-    const empIds = db
-      .list('employees')
-      .filter((e) => e.dept === dept)
-      .map((e) => e._id);
-    if (collection === 'employees') return out.filter((i) => empIds.includes(i._id));
-    return out.filter((i) => empIds.includes(i.employeeId));
-  }
-  return out;
+/** 数据范围：两角色均为全部（本公司内） */
+function scopeOf() {
+  return 'all';
 }
 
 /** 按公司隔离（所有业务集合都生效） */
@@ -229,9 +185,14 @@ function byTenant(items, sess) {
   return items.filter((i) => !i.tenantId || i.tenantId === sess.tenantId);
 }
 
+/** 数据范围过滤：两角色模型下不做二次裁剪，仅按公司隔离 */
+function applyScope(items, collection, sess) {
+  return byTenant(items, sess);
+}
+
 module.exports = {
   registerAdmin, join, login, logout, session,
   canModule, scopeOf, applyScope, byTenant, roleModules, roleName, roleNames,
   hashPwd, newSalt, publicUser, tenantOf,
-  DEFAULT_SCOPE, DEFAULT_MODULES, DEFAULT_ROLE_NAMES,
+  DEFAULT_MODULES, DEFAULT_ROLE_NAMES, USER_MODULES,
 };

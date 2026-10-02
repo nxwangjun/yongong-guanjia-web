@@ -13,6 +13,19 @@
  *   试用期工资：不低于本单位同岗最低档或合同约定工资的 80%，且不低于当地最低工资
  */
 const RULES = require('../data/rules.json');
+const RULE_BY_ID = {};
+RULES.forEach((r) => (RULE_BY_ID[r.id] = r));
+
+/** 取已核验规则里的法条等元信息（保证法条来自库，不自行编造） */
+function metaOf(baseId, fallback) {
+  const b = RULE_BY_ID[baseId];
+  return {
+    law: (b && b.law) || [],
+    consequence: (b && b.consequence) || (fallback && fallback.consequence) || '',
+    remedy: (b && b.remedy) || (fallback && fallback.remedy) || [],
+    sev: (b && b.sev) || (fallback && fallback.sev) || '中',
+  };
+}
 
 const DAY = 86400000;
 function toDate(v) {
@@ -216,6 +229,150 @@ const AUTO = {
   },
 };
 
+/* ============ 扩充的自动测算规则 ============
+ * 这些规则不需要人工确认，直接由导入的数据算出来。
+ * 法条一律复用已核验规则库（rules.json）里对应条目的原文，不另行编写。
+ */
+const EXTRA_RULES = [
+  {
+    id: 'R-ENTRY-05',
+    cat: 'entry_sign', catLabel: '合同签订', base: 'R-SIGN-01', sev: '高',
+    risk: '劳动合同已到期但仍在用工（未及时续签）',
+    consequence: '期满未续签继续用工的，形成事实劳动关系，同样面临二倍工资风险',
+    remedy: ['到期前完成续签', '已超期的立即补签并留存补签说明'],
+    module: 'contract',
+    pick(ctx) {
+      const emps = empMap(ctx.employees);
+      const latest = {};
+      (ctx.contracts || []).forEach((c) => {
+        if (!c.endDate) return;
+        if (!latest[c.employeeId] || toDate(c.endDate) > toDate(latest[c.employeeId].endDate)) {
+          latest[c.employeeId] = c;
+        }
+      });
+      const out = [];
+      Object.keys(latest).forEach((id) => {
+        const e = emps[id] || {};
+        if (e.status === 'left') return;
+        const c = latest[id];
+        if (toDate(c.endDate) < ctx.today) {
+          out.push({
+            employeeId: id, name: nameOf(e), dept: deptOf(e),
+            detail: `合同已于 ${fmt(toDate(c.endDate))} 到期，仍继续用工 ${days(c.endDate, ctx.today)} 天`,
+          });
+        }
+      });
+      return out;
+    },
+  },
+
+  {
+    id: 'R-SIGN-02-AUTO',  // 不与规则库 ask 题 R-SIGN-02 撞号
+    cat: 'entry_sign', catLabel: '合同签订', base: 'R-SIGN-06', sev: '高',
+    risk: '用工满一年仍未订立书面劳动合同（视为已订立无固定期限合同）',
+    consequence: '视为已订立无固定期限劳动合同，且应当支付最多 11 个月的二倍工资',
+    remedy: ['立即补签无固定期限劳动合同', '核算 11 个月二倍工资敞口'],
+    module: 'contract',
+    pick(ctx) {
+      const signed = {};
+      (ctx.contracts || []).forEach((c) => c.employeeId && (signed[c.employeeId] = true));
+      return (ctx.employees || [])
+        .filter((e) => e.status !== 'left' && !signed[e._id] && days(e.entryDate, ctx.today) >= 365)
+        .map((e) => ({
+          employeeId: e._id, name: nameOf(e), dept: deptOf(e),
+          detail: `入职 ${days(e.entryDate, ctx.today)} 天（已满一年），始终无书面合同`,
+        }));
+    },
+  },
+
+  {
+    id: 'R-WELFARE-04-AUTO',  // 不与规则库 ask 题 R-WELFARE-04 撞号
+    cat: 'entry_welfare', catLabel: '法定福利', base: 'R-WELFARE-02', sev: '中',
+    risk: '社保缴费基数低于本人工资（未足额缴纳）',
+    consequence: '由征收机构责令限期缴纳或补足，并自欠缴之日起加收滞纳金；逾期不缴的处罚款',
+    remedy: ['按实际工资核定缴费基数', '核算差额与滞纳金'],
+    module: 'social',
+    pick(ctx) {
+      const emps = empMap(ctx.employees);
+      const wage = {};
+      (ctx.payrolls || []).forEach((p) => {
+        if (p.employeeId) wage[p.employeeId] = Math.max(wage[p.employeeId] || 0, Number(p.amount) || 0);
+      });
+      return (ctx.socials || [])
+        .filter((s) => s.insured && Number(s.base) > 0 && wage[s.employeeId] && Number(s.base) < wage[s.employeeId])
+        .map((s) => {
+          const e = emps[s.employeeId] || {};
+          return {
+            employeeId: s.employeeId, name: nameOf(e), dept: deptOf(e),
+            detail: `月工资 ${wage[s.employeeId]} 元，缴费基数仅 ${s.base} 元`,
+          };
+        });
+    },
+  },
+
+  {
+    id: 'R-PROB-03-AUTO',  // 不与规则库 ask 题 R-PROB-03 撞号
+    cat: 'probation', catLabel: '试用期', base: 'R-PROB-02', sev: '高',
+    risk: '试用期工资低于用人单位所在地最低工资标准',
+    consequence: '由劳动行政部门责令支付差额部分；逾期不支付的，责令加付赔偿金',
+    remedy: ['补足至当地最低工资标准'],
+    module: 'payroll',
+    pick(ctx) {
+      const mw = Number(ctx.cfg.minWage) || 0;
+      if (!mw) return [];
+      const emps = empMap(ctx.employees);
+      return (ctx.payrolls || [])
+        .filter((p) => p.probation && Number(p.amount) > 0 && Number(p.amount) < mw)
+        .map((p) => {
+          const e = emps[p.employeeId] || {};
+          return {
+            employeeId: p.employeeId, name: nameOf(e), dept: deptOf(e),
+            detail: `试用期工资 ${p.amount} 元，低于当地最低工资 ${mw} 元`,
+          };
+        });
+    },
+  },
+
+  {
+    id: 'R-WAGE-04-AUTO',  // 不与规则库 ask 题 R-WAGE-04 撞号
+    cat: 'entry_wage', catLabel: '工资', base: 'R-WAGE-02', sev: '中',
+    risk: '加班费明显低于法定标准（低于正常小时工资的 1 倍）',
+    consequence: '劳动者可主张补足加班费差额，存在集体争议风险',
+    remedy: ['按 150% / 200% / 300% 重新核算加班费', '规范加班审批与工时记录'],
+    module: 'payroll',
+    pick(ctx) {
+      const emps = empMap(ctx.employees);
+      const ot = {};
+      (ctx.attendances || []).forEach((a) => {
+        ot[a.employeeId] = (ot[a.employeeId] || 0) + (Number(a.overtimeHours) || 0);
+      });
+      const out = [];
+      (ctx.payrolls || []).forEach((p) => {
+        const hours = ot[p.employeeId] || 0;
+        const pay = Number(p.overtimePay) || 0;
+        const monthWage = Number(p.amount) || 0;
+        if (!hours || !monthWage) return;
+        // 保守口径：小时工资按 月工资 ÷ 21.75 ÷ 8，连 1 倍都不到才算明显不足（避免误报）
+        const hourly = monthWage / 21.75 / 8;
+        if (pay > 0 && pay < hourly * hours) {
+          const e = emps[p.employeeId] || {};
+          out.push({
+            employeeId: p.employeeId, name: nameOf(e), dept: deptOf(e),
+            detail: `加班 ${hours} 小时，加班费 ${pay} 元，低于小时工资 ${hourly.toFixed(1)} 元 × ${hours} 小时`,
+          });
+        }
+      });
+      return out;
+    },
+  },
+];
+
+function fmt(ts) {
+  const d = new Date(Number(ts));
+  if (isNaN(d.getTime())) return '—';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** 证照到期提醒（不属 116 条规则，归"证照资质"模块的到期提醒） */
 function certExpiring(ctx) {
   const emps = empMap(ctx.employees);
@@ -312,6 +469,29 @@ function scan(data) {
         people: [],
       });
     }
+  });
+
+  // 扩充的自动测算规则
+  EXTRA_RULES.forEach((r) => {
+    const people = r.pick(ctx);
+    if (!people.length) return;
+    const meta = metaOf(r.base, r);
+    items.push({
+      ruleId: r.id,
+      level: 'auto',
+      source: '数据扫描',
+      cat: r.cat,
+      catLabel: r.catLabel,
+      risk: r.risk,
+      sev: r.sev || meta.sev,
+      law: meta.law,
+      consequence: r.consequence || meta.consequence,
+      remedy: r.remedy && r.remedy.length ? r.remedy : meta.remedy,
+      owner: 'hr',
+      module: r.module || '',
+      count: people.length,
+      people,
+    });
   });
 
   // 证照到期提醒并入清单

@@ -1,6 +1,6 @@
 /**
  * 语料加载：corpus.json（可被检索的法条/规则/风险点）+ quiz.json（自检问卷）
- * 由 scripts/build-corpus.js 从「用工管家」既有知识库生成。
+ * 由 scripts/build-corpus.js 从既有劳动法知识库生成。
  */
 const fs = require('fs');
 const path = require('path');

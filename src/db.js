@@ -235,14 +235,11 @@ function seed() {
     contractExpireDays: 30,
     overtimeLimitMonth: 36,
     certExpireDays: 30,
-    contactPhone: '15009665511',
-    contactWechat: '15009665511',
   };
 
   const users = [
-    { _id: 'u01', name: '王军', role: 'admin', phone: '15009665511' },
-    { _id: 'u02', name: '张 HR', role: 'hr', phone: '' },
-    { _id: 'u03', name: '李法务', role: 'legal', phone: '' },
+    { _id: 'u01', name: '管理员', role: 'admin', phone: '' },
+    { _id: 'u02', name: '普通用户', role: 'user', phone: '' },
   ];
 
   // ---- 多租户：演示公司 + 内置账号 ----
@@ -262,15 +259,10 @@ function seed() {
     );
   };
 
-  // 内置演示账号（五个默认主体各一个，用于验证模块权限与数据范围）
+  // 内置演示账号（两个角色各一个，用于验证模块权限）
   const accounts = [
-    mkAccount('admin', 'admin123', '王军', 'admin', {}),
-    mkAccount('hr', 'hr123', '张人事', 'hr', { dept: '综合部' }),
-    mkAccount('legal', 'legal123', '李法务', 'legal', { dept: '综合部' }),
-    // 部门负责人：工程部，审批中心只看指派给自己的
-    mkAccount('approver', 'approver123', '陈主管', 'approver', { dept: '工程部', employeeId: 'e08' }),
-    // 普通员工：绑定员工档案 e05（吴九），数据范围 self → 只能看到自己
-    mkAccount('staff', 'staff123', '吴九', 'staff', { dept: '工程部', employeeId: 'e05' }),
+    mkAccount('admin', 'admin123', '管理员', 'admin', {}),
+    mkAccount('user', 'user123', '普通用户', 'user', { dept: '综合部' }),
   ];
 
   // 业务数据挂上公司 ID
