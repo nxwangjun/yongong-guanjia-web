@@ -75,6 +75,9 @@ body {
 .card h2 { margin: 0 0 10px; font-size: 15.5px; }
 .card h3 { margin: 0 0 8px; font-size: 14.5px; }
 .notice { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-bottom: 14px; }
+/* 首页演示数据横幅 */
+.demo-banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.demo-banner-btns { display: flex; gap: 8px; flex-shrink: 0; }
 
 .btn {
   border: 1px solid var(--border); background: var(--surface); color: var(--text);

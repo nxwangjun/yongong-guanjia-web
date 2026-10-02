@@ -1,14 +1,6 @@
-/**
- * 数据层：JSON 文件持久化（零依赖，无需安装数据库）
- * 集合即 db.json 的顶层 key，读写走内存缓存 + 落盘。
- * 免登录版：不再存账号/会话/邀请码，只留业务数据与设置。
- */
-const fs = require('fs');
-const path = require('path');
-
-const DB_FILE = path.join(__dirname, '..', 'data', 'db.json');
-
-// 集合结构（首次运行按此初始化）
+/* 本文件由 scripts/build-browser.js 自动生成，请勿手改。
+   来源：src/db.js 的 seed()（36 人演示数据，17 类预埋风险）。
+   修改种子数据请改 src/db.js 的 seed()，然后重跑 build-browser.js。 */
 const EMPTY = {
   employees: [], contracts: [], attendances: [], payrolls: [], socials: [], certs: [],
   confirms: [], surveys: [], riskItems: [],
@@ -16,115 +8,6 @@ const EMPTY = {
   audit: [], settings: {}, ruleCfg: {},
 };
 
-let db = null;
-
-function load() {
-  if (db) return db;
-  if (fs.existsSync(DB_FILE)) {
-    try {
-      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    } catch (e) {
-      db = null;
-    }
-  }
-  if (!db) db = seed();
-  // 补齐缺失集合，避免旧文件升级时报错
-  Object.keys(EMPTY).forEach((k) => {
-    if (db[k] === undefined) db[k] = EMPTY[k];
-  });
-  save();
-  return db;
-}
-
-let saveTimer = null;
-function save() {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-  } catch (e) {
-    console.error('[db] 写入失败：', e.message);
-  }
-}
-/** 合并写入（高频写时减少落盘次数） */
-function saveSoon() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    save();
-  }, 120);
-}
-
-/* ---------- 基础 CRUD ---------- */
-function col(name) {
-  load();
-  if (!db[name]) db[name] = [];
-  return db[name];
-}
-
-function list(name, filter) {
-  const arr = col(name);
-  if (typeof filter === 'function') return arr.filter(filter);
-  if (filter && typeof filter === 'object') {
-    return arr.filter((it) =>
-      Object.keys(filter).every((k) => String(it[k]) === String(filter[k]))
-    );
-  }
-  return arr.slice();
-}
-
-function get(name, id) {
-  return col(name).filter((it) => it._id === id)[0] || null;
-}
-
-function add(name, obj) {
-  const arr = col(name);
-  obj._id = obj._id || genId(name);
-  obj.createdAt = obj.createdAt || Date.now();
-  arr.push(obj);
-  saveSoon();
-  return obj;
-}
-
-function update(name, id, patch) {
-  const it = get(name, id);
-  if (!it) return null;
-  Object.keys(patch).forEach((k) => (it[k] = patch[k]));
-  it.updatedAt = Date.now();
-  saveSoon();
-  return it;
-}
-
-function remove(name, id) {
-  const arr = col(name);
-  const i = arr.findIndex((it) => it._id === id);
-  if (i < 0) return false;
-  arr.splice(i, 1);
-  saveSoon();
-  return true;
-}
-
-function genId(prefix) {
-  return (
-    String(prefix).slice(0, 2) +
-    Date.now().toString(36) +
-    Math.random().toString(36).slice(2, 6)
-  );
-}
-
-/* ---------- 审计日志 ---------- */
-function log(action, detail, who) {
-  const arr = col('audit');
-  arr.unshift({
-    _id: genId('au'),
-    action,
-    detail: detail || '',
-    who: who || '系统',
-    at: Date.now(),
-  });
-  if (arr.length > 500) arr.length = 500;
-  saveSoon();
-}
-
-/* ---------- 种子数据（36 人，17 类风险每类至少 2 人命中） ---------- */
 function seed() {
   const DAY = 86400000;
   const now = Date.now();
@@ -347,14 +230,8 @@ function seed() {
   };
 }
 
-/** 重置为演示数据 */
-function reset() {
-  db = seed();
-  save();
-  return db;
-}
 
-module.exports = {
-  load, save, saveSoon, reset,
-  col, list, get, add, update, remove, genId, log,
+/** 返回一份演示数据深拷贝（浏览器端专用） */
+window.getSeed = function getSeed() {
+  return JSON.parse(JSON.stringify(seed()));
 };

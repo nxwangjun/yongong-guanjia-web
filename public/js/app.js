@@ -1,54 +1,38 @@
-/* 应用外壳：登录态 / 侧边栏（按角色）/ 路由 / 首页 */
+/* 应用外壳：免登录版 —— 侧边栏 / 路由 / 首页 */
 const APP = (() => {
-  // 检测系统只保留与"风险检测"直接相关的模块，审批/流程/编排等通用件已移除
+  // 检测系统只保留与"风险检测"直接相关的模块；免登录版去掉「成员账户」
   const GROUPS = [
     { name: '检测', items: [['home', '检测概览'], ['people', '员工风险画像']] },
     { name: '风险', items: [['risk', '风险清单'], ['riskconfirm', '合规自查'], ['risktodo', '风险处置'], ['riskrule', '规则配置'], ['ai', 'AI 问答']] },
     { name: '数据', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证件资质'], ['dataio', '数据导入']] },
-    { name: '系统', items: [['member', '成员账户'], ['setting', '系统设置']] },
+    { name: '系统', items: [['setting', '系统设置']] },
   ];
-
-  // 只有两种主体：管理员（全部）与普通用户（除系统设置/成员外全部）
-  const DEFAULT_ROLE_NAMES = { admin: '管理员', user: '普通用户' };
-
-  // 非管理员可见的模块（普通用户能录数据、看检测、用 AI，但不能改系统与成员）
-  const USER_MODULES = ['home', 'people', 'risk', 'riskconfirm', 'risktodo', 'riskrule', 'ai',
-    'staff', 'contract', 'attend', 'payroll', 'social', 'cert', 'dataio'];
-
-  function canModule(role, mod) {
-    if (role === 'admin') return true;
-    return USER_MODULES.includes(mod);
-  }
-
-  function roleLabel(role) {
-    return role === 'admin' ? '管理员' : '普通用户';
-  }
-
-  const me = { user: null };
 
   /* ---------- 首页 ---------- */
   PAGES.home = {
     title: '首页',
     async render(c) {
-      const [s, h, mine, pe] = await Promise.all([
+      const [s, h, pe] = await Promise.all([
         API.stats().catch(() => ({})),
         API.health().catch(() => ({})),
-        API.me().catch(() => ({})),
-        API.get('/api/risk/by-employee').catch(() => ({ employees: [] })),
+        API.riskByEmployee().catch(() => ({ employees: [] })),
       ]);
-      const u = mine.user || me.user || {};
       const emps = pe.employees || [];
       const affected = emps.filter((e) => e.riskCount > 0).length;
       const high = emps.reduce((x, e) => x + (e.highCount || 0), 0);
 
       c.innerHTML = `
+        <div class="demo-banner">
+          <span>📌 这是<b>演示数据</b>，方便直接体验。数据只存在您的浏览器里（localStorage），不上传服务器。</span>
+          <span class="demo-banner-btns">
+            <button class="btn small danger" id="btnWipe">清空演示数据</button>
+            <button class="btn small" id="btnReseed">重新载入演示数据</button>
+          </span>
+        </div>
         <div class="card">
-          <h2>${UI.esc(u.companyName || h.companyName || '用工风险检测')}</h2>
+          <h2>${UI.esc(h.companyName || '用工风险检测')}</h2>
           <p style="color:var(--muted);margin:0">
             导入或录入用工数据 → 系统自动测算每个人身上的用工风险 → 算不出的走合规自查 → 给出整改建议。
-          </p>
-          <p style="color:var(--muted);margin:6px 0 0">
-            当前身份：<b>${UI.esc(u.name || '')}</b>（${UI.esc(roleLabel(u.role))}）
           </p>
         </div>
         <div class="stat-grid">
@@ -61,7 +45,7 @@ const APP = (() => {
           <h2>开始检测</h2>
           <div class="toolbar">
             <button class="btn primary" onclick="location.hash='#/people'">看员工风险画像</button>
-            <button class="btn" onclick="location.hash='#/dataio'">导入数据（Excel）</button>
+            <button class="btn" onclick="location.hash='#/dataio'">导入数据</button>
             <button class="btn" onclick="location.hash='#/riskconfirm'">合规自查</button>
             <button class="btn" onclick="location.hash='#/ai'">问 AI 劳动法问题</button>
           </div>
@@ -74,62 +58,32 @@ const APP = (() => {
               : '<span class="tag orange">未配置密钥，本地规则引擎兜底</span>'}</td></tr>
             <tr><td style="color:var(--muted)">劳动法知识库</td><td>${h.corpusSize ?? 0} 条（法条 / 规则 / 风险点）</td></tr>
             <tr><td style="color:var(--muted)">风险规则</td><td>116 条（其中 16 条可由数据自动测算，其余走合规自查）</td></tr>
+            <tr><td style="color:var(--muted)">数据存储</td><td>仅存在本浏览器（localStorage），不上传服务器</td></tr>
           </table>
         </div>`;
+
+      /* ---- 演示数据横幅按钮 ---- */
+      c.querySelector('#btnWipe').onclick = () =>
+        UI.confirmBox('将清空本浏览器里的全部数据（员工/合同/考勤/薪资/社保/证照/问卷答案全部清空，从白板开始），确定？', async () => {
+          const d = await API.exportAll();
+          ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs', 'riskItems'].forEach((k) => (d[k] = []));
+          d.confirms = {};
+          d.surveys = {};
+          d.audit = [];
+          await API.importAll(d);
+          UI.toast('已清空，从空白开始');
+          setTimeout(() => location.reload(), 600);
+        });
+      c.querySelector('#btnReseed').onclick = () =>
+        UI.confirmBox('将丢弃当前全部改动，重新载入 36 人演示数据（含 17 类预埋风险），确定？', async () => {
+          await API.reset();
+          UI.toast('已重新载入演示数据');
+          setTimeout(() => location.reload(), 600);
+        });
     },
   };
 
-  /* ---------- 登录态 ---------- */
-  function showLogin() {
-    document.querySelector('.sidebar').style.display = 'none';
-    const ub = document.getElementById('userBar');
-    if (ub) ub.style.display = 'none';
-    document.getElementById('btnQuickScan').style.display = 'none';
-    document.getElementById('pageTitle').textContent = '登录';
-    document.getElementById('content').innerHTML = '';
-    PAGES.login.render(document.getElementById('content'));
-  }
-
-  async function afterLogin() {
-    const info = await API.me().catch(() => null);
-    if (info && info.user) me.user = info.user;
-    document.querySelector('.sidebar').style.display = '';
-    document.getElementById('btnQuickScan').style.display = '';
-
-    renderUserBar();
-    await renderNav();
-    await route();
-  }
-
-  function renderUserBar() {
-    let ub = document.getElementById('userBar');
-    if (!ub) {
-      ub = document.createElement('div');
-      ub.id = 'userBar';
-      ub.style.cssText = 'display:flex;align-items:center;gap:8px';
-      document.querySelector('.tb-right').appendChild(ub);
-    }
-    ub.style.display = 'flex';
-    const u = me.user || {};
-    ub.innerHTML =
-      `<span class="tag blue">${UI.esc(u.name || '')} · ${UI.esc(roleLabel(u.role))}</span>` +
-      `<button class="btn small" id="btnLogout">退出</button>`;
-    document.getElementById('btnLogout').onclick = async () => {
-      try {
-        await API.logout();
-      } catch (e) {}
-      API.clearToken();
-      me.user = null;
-      showLogin();
-    };
-  }
-
-  function onNeedLogin() {
-    UI.toast('登录已过期');
-    showLogin();
-  }
-
-  /* ---------- 侧边栏（按角色过滤） ---------- */
+  /* ---------- 侧边栏 ---------- */
   async function renderNav() {
     let s = {};
     try {
@@ -137,12 +91,10 @@ const APP = (() => {
     } catch (e) {}
     const hidden = s.hiddenModules || [];
     const order = s.moduleOrder || [];
-    const role = (me.user || {}).role || 'admin';
     const nav = document.getElementById('sideNav');
     nav.innerHTML = GROUPS.map((g) => {
       const items = g.items
         .filter((it) => !hidden.includes(it[0]))
-        .filter((it) => canModule(role, it[0]))
         .sort((a, b) => {
           const ia = order.indexOf(a[0]);
           const ib = order.indexOf(b[0]);
@@ -179,17 +131,6 @@ const APP = (() => {
   /* ---------- 路由 ---------- */
   async function route() {
     const key = (location.hash || '#/home').replace('#/', '') || 'home';
-    const role = (me.user || {}).role || 'admin';
-
-    // 越权访问拦截
-    if (key !== 'home' && !canModule(role, key)) {
-      document.getElementById('pageTitle').textContent = '无访问权限';
-      document.getElementById('content').innerHTML =
-        `<div class="card"><h2>无访问权限</h2><p>当前主体（${UI.esc(roleLabel(role))}）没有「${
-          (PAGES[key] || {}).title || key
-        }」模块的权限。可在「角色权限」里由管理员调整。</p></div>`;
-      return;
-    }
 
     // 自检问卷已并入「合规自查」，旧链接自动指向合并后的页面
     let page = PAGES[key] || PAGES.home;
@@ -212,19 +153,14 @@ const APP = (() => {
     document.getElementById('btnMenu').onclick = () =>
       document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('btnQuickScan').onclick = () => (location.hash = '#/risk');
-    window.addEventListener('hashchange', () => {
-      if (API.getToken()) route();
-    });
+    window.addEventListener('hashchange', route);
 
     loadHealth();
-    if (API.getToken()) {
-      afterLogin().catch(() => showLogin());
-    } else {
-      showLogin();
-    }
+    renderNav();
+    route();
   }
 
-  return { init, loadHealth, renderNav, route, afterLogin, onNeedLogin, showLogin, canModule, me };
+  return { init, loadHealth, renderNav, route };
 })();
 
 document.addEventListener('DOMContentLoaded', APP.init);

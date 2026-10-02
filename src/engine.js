@@ -365,6 +365,53 @@ const EXTRA_RULES = [
       return out;
     },
   },
+
+  {
+    id: 'R-PROB-02-AUTO',  // 不与规则库 ask 题 R-PROB-02 撞号
+    cat: 'probation', catLabel: '试用期', base: 'R-PROB-02', sev: '高',
+    risk: '试用期工资低于转正工资的 80%',
+    consequence: '由劳动行政部门责令支付差额部分；逾期不支付的，责令加付赔偿金',
+    remedy: ['补足至转正工资的 80% 以上', '重新核算试用期工资标准'],
+    module: 'payroll',
+    pick(ctx) {
+      const emps = empMap(ctx.employees);
+      return (ctx.payrolls || [])
+        .filter((p) => p.probation && Number(p.formalAmount) > 0 && Number(p.amount) > 0 && Number(p.amount) < Number(p.formalAmount) * 0.8)
+        .map((p) => {
+          const e = emps[p.employeeId] || {};
+          return {
+            employeeId: p.employeeId, name: nameOf(e), dept: deptOf(e),
+            detail: `试用期工资 ${p.amount} 元，低于转正工资 ${p.formalAmount} 元的 80%（${Math.round(p.formalAmount * 0.8)} 元）`,
+          };
+        });
+    },
+  },
+
+  {
+    id: 'R-WAGE-05-AUTO',  // 不与规则库 ask 题 R-WAGE-05 撞号
+    cat: 'entry_wage', catLabel: '工资', base: 'R-WAGE-02', sev: '中',
+    risk: '加班费占月工资比重超过 30%（异常偏高）',
+    consequence: '长期高比例加班费说明排班或工时制度异常，易引发群体性加班费争议与劳动监察处罚',
+    remedy: ['排查排班制度，减少常态化加班', '规范加班审批流程，避免以加班费替代正常工资增长'],
+    module: 'payroll',
+    pick(ctx) {
+      const emps = empMap(ctx.employees);
+      return (ctx.payrolls || [])
+        .filter((p) => {
+          const amt = Number(p.amount) || 0;
+          const ot = Number(p.overtimePay) || 0;
+          return amt > 0 && ot > 0 && ot / amt > 0.3;
+        })
+        .map((p) => {
+          const e = emps[p.employeeId] || {};
+          const pct = ((Number(p.overtimePay) / Number(p.amount)) * 100).toFixed(1);
+          return {
+            employeeId: p.employeeId, name: nameOf(e), dept: deptOf(e),
+            detail: `月工资 ${p.amount} 元，加班费 ${p.overtimePay} 元，占比 ${pct}%（超 30%）`,
+          };
+        });
+    },
+  },
 ];
 
 function fmt(ts) {

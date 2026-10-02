@@ -1,100 +1,5 @@
-/* 系统模块：成员账户（含邀请）/ 数据导入导出 / 系统设置（两角色：管理员 + 普通用户） */
+/* 系统模块：数据导入导出 / 系统设置（免登录 A1 版：数据全部在本浏览器 localStorage） */
 window.PAGES = window.PAGES || {};
-
-/* ============ 成员账户 ============ */
-PAGES.member = {
-  title: '成员账户',
-  async render(c) {
-    const list = await API.list('accounts');
-    const roleLabel = (r) => (r === 'admin' ? '管理员' : '普通用户');
-    c.innerHTML = `
-      <div class="card">
-        <h2>成员账号</h2>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">
-          系统只有两个角色：<b>管理员</b>（注册时创建，全部权限）与<b>普通用户</b>（可录数据、看检测、用 AI，不能进本页和系统设置）。停用后该账号无法登录。
-        </p>
-        <table class="tbl">
-          <thead><tr><th>姓名</th><th>登录账号</th><th style="width:90px">角色</th><th style="width:110px">部门</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
-          <tbody>
-            ${list.length
-              ? list
-                  .map(
-                    (a) => `<tr>
-                  <td>${UI.esc(a.name || '')}</td>
-                  <td>${UI.esc(a.username || '')}</td>
-                  <td><span class="tag ${a.role === 'admin' ? 'blue' : 'gray'}">${roleLabel(a.role)}</span></td>
-                  <td>${UI.esc(a.dept || '—')}</td>
-                  <td>${a.enabled === false ? '<span class="tag orange">已停用</span>' : '<span class="tag green">在用</span>'}</td>
-                  <td>${a.role === 'admin' ? '' : `<button class="btn small ${a.enabled === false ? '' : 'danger'}" data-tg="${a._id}" data-en="${a.enabled === false ? '1' : '0'}">${a.enabled === false ? '启用' : '停用'}</button>`}</td>
-                </tr>`
-                  )
-                  .join('')
-              : '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">暂无成员</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <div class="toolbar"><h2 style="margin:0">邀请普通用户</h2><div class="spacer"></div>
-          <input class="search" id="invDept" placeholder="所属部门（可空）" style="width:150px" />
-          <button class="btn primary" id="gen">生成邀请码</button></div>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          把邀请码发给同事，他在登录页选「邀请码加入」，注册后即成为本公司普通用户。
-        </p>
-        <div id="inviteBox"></div>
-        <div id="inviteList" style="margin-top:10px"></div>
-      </div>`;
-
-    const renderInvites = async () => {
-      const inv = await API.list('invites');
-      c.querySelector('#inviteList').innerHTML = inv.length
-        ? `<table class="tbl">
-            <thead><tr><th>邀请码</th><th style="width:110px">创建时间</th><th style="width:90px">状态</th><th style="width:90px">操作</th></tr></thead>
-            <tbody>${inv
-              .map(
-                (i) => `<tr>
-                <td><b style="letter-spacing:1px">${UI.esc(i.code)}</b></td>
-                <td>${UI.fmtDate(i.createdAt)}</td>
-                <td>${i.used ? '<span class="tag gray">已使用</span>' : '<span class="tag green">有效</span>'}</td>
-                <td>${i.used ? '' : `<button class="btn small danger" data-del="${i._id}">吊销</button>`}</td>
-              </tr>`
-              )
-              .join('')}</tbody>
-          </table>`
-        : '';
-      c.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
-        await API.remove('invites', b.dataset.del);
-        UI.toast('已吊销');
-        renderInvites();
-      }));
-    };
-    renderInvites();
-
-    c.querySelectorAll('[data-tg]').forEach((b) => (b.onclick = async () => {
-      await API.update('accounts', b.dataset.tg, { enabled: b.dataset.en === '1' });
-      UI.toast(b.dataset.en === '1' ? '已启用' : '已停用');
-      PAGES.member.render(c);
-    }));
-
-    c.querySelector('#gen').onclick = async () => {
-      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-      await API.add('invites', {
-        code,
-        role: 'user',
-        dept: c.querySelector('#invDept').value.trim(),
-        used: false,
-        createdAt: Date.now(),
-      });
-      c.querySelector('#inviteBox').innerHTML = `
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;font-size:14px;margin-bottom:10px">
-          邀请码：<b style="font-size:18px;letter-spacing:2px">${code}</b><br/>
-          <span style="color:var(--muted);font-size:13px">让成员在登录页选「邀请码加入」，填此码注册即可。</span>
-        </div>`;
-      UI.toast('已生成：' + code);
-      renderInvites();
-    };
-  },
-};
 
 /* ============ 数据导入导出 ============ */
 PAGES.dataio = {
@@ -106,16 +11,15 @@ PAGES.dataio = {
     ];
     c.innerHTML = `
       <div class="card">
-        <h2>导出（Excel / WPS 可直接打开）</h2>
+        <h2>导出</h2>
         <p style="color:var(--muted);font-size:13px">
-          导出 7 张表（员工、劳动合同、考勤、薪资、社保、证照、风险处置），表头为中文，改完可直接导回。
+          所有数据只存在本浏览器里。建议定期导出 JSON 备份，换电脑或清浏览器数据前导一次。
         </p>
         <div class="toolbar">
-          <button class="btn primary" id="expXlsx">导出 Excel（.xlsx）</button>
-          <button class="btn" id="expJson">导出 JSON 备份</button>
+          <button class="btn primary" id="expJson">导出 JSON 备份（全部数据）</button>
         </div>
         <div class="toolbar" style="margin-top:10px">
-          <span style="font-size:13px;color:var(--muted)">单表导出 CSV：</span>
+          <span style="font-size:13px;color:var(--muted)">单表导出 CSV（Excel / WPS 可直接打开）：</span>
           <select id="csvCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
             ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
           </select>
@@ -126,10 +30,10 @@ PAGES.dataio = {
       <div class="card">
         <h2>导入</h2>
         <p style="color:var(--muted);font-size:13px">
-          <b>.xlsx</b>：按工作表名自动对应（员工 / 劳动合同 / 考勤 / 薪资 / 社保 / 证照 / 风险处置），表头需与导出时一致。<br/>
-          <b>.csv</b>：单表导入，需在下边选择对应表；CSV 也是 Excel / WPS 能直接打开编辑的格式。
+          <b>.json</b>：整体恢复备份（覆盖当前全部数据，导入前会先让你确认）。<br/>
+          <b>.csv</b>：单表导入，需在下边选择对应表，表头需与导出时一致；CSV 用 Excel / WPS 就能编辑。
         </p>
-        <input type="file" id="file" accept=".xlsx,.csv,.json" />
+        <input type="file" id="file" accept=".csv,.json" />
         <div class="toolbar" style="margin-top:10px">
           <span style="font-size:13px;color:var(--muted)">CSV 导入到：</span>
           <select id="impCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
@@ -138,36 +42,47 @@ PAGES.dataio = {
           <button class="btn primary" id="impBtn">确认导入</button>
         </div>
         <p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">
-          导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。
+          CSV 导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。
         </p>
       </div>
 
       <div class="card">
         <h2>恢复演示数据</h2>
-        <p style="color:var(--muted);font-size:13px">清空当前公司数据，恢复为内置的 12 人演示数据（含 9 类预埋风险）。</p>
+        <p style="color:var(--muted);font-size:13px">清空当前数据，恢复为内置的 36 人演示数据（含 17 类预埋风险，外加证照临期提醒）。</p>
         <button class="btn danger" id="rst">恢复演示数据</button>
       </div>`;
 
-    // 导出
-    c.querySelector('#expXlsx').onclick = () => {
-      window.location.href = '/api/export.xlsx?token=' + encodeURIComponent(API.getToken());
-      UI.toast('已开始下载 Excel');
-    };
-    c.querySelector('#expCsv').onclick = () => {
-      const col = c.querySelector('#csvCol').value;
-      window.location.href = '/api/export.csv?col=' + col + '&token=' + encodeURIComponent(API.getToken());
-    };
-    c.querySelector('#expJson').onclick = async () => {
-      const data = await API.exportAll();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    // ---- 导出 ----
+    const download = (blob, name) => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = '小哲用工风险检测_备份_' + new Date().toISOString().slice(0, 10) + '.json';
+      a.download = name;
       a.click();
-      UI.toast('已导出 JSON');
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     };
 
-    // 导入
+    c.querySelector('#expJson').onclick = async () => {
+      const data = await API.exportAll();
+      download(
+        new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+        '小哲用工风险检测_备份_' + new Date().toISOString().slice(0, 10) + '.json'
+      );
+      UI.toast('已导出 JSON 备份');
+    };
+
+    c.querySelector('#expCsv').onclick = async () => {
+      const col = c.querySelector('#csvCol').value;
+      const items = await API.list(col);
+      const text = window.CSV.colToCsv(col, items);
+      const label = COLS.filter((x) => x[0] === col)[0][1];
+      download(
+        new Blob([text], { type: 'text/csv;charset=utf-8' }),
+        '小哲用工风险检测_' + label + '_' + new Date().toISOString().slice(0, 10) + '.csv'
+      );
+      UI.toast('已导出 ' + label + ' ' + items.length + ' 条');
+    };
+
+    // ---- 导入 ----
     let picked = null;
     c.querySelector('#file').onchange = (e) => {
       const f = e.target.files[0];
@@ -180,38 +95,33 @@ PAGES.dataio = {
       if (!picked) return UI.toast('请先选择文件');
       const name = picked.name.toLowerCase();
       try {
-        if (name.endsWith('.xlsx')) {
-          const buf = await picked.arrayBuffer();
-          const r = await fetch(
-            '/api/import/file?type=xlsx&token=' + encodeURIComponent(API.getToken()),
-            { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: buf }
-          ).then((x) => x.json());
-          if (r.error) return UI.toast(r.error);
-          UI.toast('已导入 ' + r.imported + ' 条：' + (r.detail || []).join('，'));
-        } else if (name.endsWith('.csv')) {
+        if (name.endsWith('.json')) {
+          const obj = JSON.parse(await picked.text());
+          UI.confirmBox('JSON 恢复会覆盖当前全部数据，确定继续？（建议先导出现有备份）', async () => {
+            await API.importAll(obj);
+            UI.toast('已恢复备份');
+            setTimeout(() => location.reload(), 800);
+          });
+          return;
+        }
+        if (name.endsWith('.csv')) {
           const text = await picked.text();
           const col = c.querySelector('#impCol').value;
-          const r = await fetch(
-            '/api/import/file?type=csv&col=' + col + '&token=' + encodeURIComponent(API.getToken()),
-            { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text }
-          ).then((x) => x.json());
-          if (r.error) return UI.toast(r.error);
-          UI.toast('已导入 ' + r.imported + ' 条');
-        } else if (name.endsWith('.json')) {
-          const obj = JSON.parse(await picked.text());
-          const r = await API.importAll(obj);
-          UI.toast('已导入 ' + r.imported + ' 条');
-        } else {
-          return UI.toast('只支持 .xlsx / .csv / .json');
+          const recs = window.CSV.csvToCol(col, text);
+          if (!recs.length) return UI.toast('CSV 里没有可导入的记录');
+          for (const r of recs) await API.add(col, r);
+          UI.toast('已导入 ' + recs.length + ' 条');
+          setTimeout(() => location.reload(), 800);
+          return;
         }
-        setTimeout(() => location.reload(), 800);
+        UI.toast('只支持 .json / .csv');
       } catch (e) {
         UI.toast('导入失败：' + e.message);
       }
     };
 
     c.querySelector('#rst').onclick = () =>
-      UI.confirmBox('将清空当前公司全部数据，恢复演示数据，确定？', async () => {
+      UI.confirmBox('将清空当前全部数据，恢复演示数据，确定？', async () => {
         await API.reset();
         UI.toast('已恢复');
         setTimeout(() => location.reload(), 600);
@@ -295,7 +205,6 @@ PAGES.setting = {
     const tierSel = c.querySelector('#tierSel');
     const minWageInput = c.querySelector('#minWage');
     const CN = ['一', '二', '三', '四', '五'];
-    // 当前选中的地区若带档位，默认把档位下拉选到与已存 minWage 相同的那个
     let curRegion = regionSel.value;
 
     function applyRegion(name, autoFill) {
@@ -348,6 +257,7 @@ PAGES.setting = {
       });
       UI.toast('已保存');
       APP.loadHealth();
+      APP.renderNav();
     };
     c.querySelector('#saveKey').onclick = async () => {
       const r = await API.configKey({
