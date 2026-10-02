@@ -39,6 +39,12 @@ function load() {
     const s = seed();
     db.tenants = s.tenants;
     db.accounts = s.accounts;
+  } else {
+    // 补齐新增的内置演示账号（如后加的部门负责人），已有账号不受影响
+    const s = seed();
+    s.accounts.forEach((sa) => {
+      if (!db.accounts.some((a) => a.username === sa.username)) db.accounts.push(sa);
+    });
   }
   // 旧库升级：把没有公司归属的业务数据挂到第一家公司，保证租户隔离生效
   const defaultTenant = (db.tenants && db.tenants[0] && db.tenants[0]._id) || 't_demo';
