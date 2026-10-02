@@ -132,7 +132,9 @@ const API = (() => {
   async function rules() {
     const d = loadDb();
     const disabled = (d.settings && d.settings.disabledRules) || [];
-    return { rules: window.Engine.RULES.map((r) => ({ ...r, enabled: !disabled.includes(r.id) })) };
+    // 116 条规则库 + 扩充自动规则 + 证照临期提醒，统一展示与开关
+    const all = (window.Engine.RULES || []).concat(window.Engine.EXTRA_RULE_LIST || []);
+    return { rules: all.map((r) => ({ ...r, enabled: !disabled.includes(r.id) })) };
   }
 
   async function setRule(id, enabled) {

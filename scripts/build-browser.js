@@ -70,10 +70,10 @@ regionSrc = regionSrc.replace(/module\.exports = \{[\s\S]*?\};/, `const Region =
 
 let engineSrc = fs.readFileSync(path.join(ROOT, 'src/engine.js'), 'utf8');
 engineSrc = engineSrc.replace("const RULES = require('../data/rules.json');", 'const RULES = window.RULES_DATA;');
-if (!/module\.exports = \{ scan, probationLimit, RULES \};/.test(engineSrc)) {
+if (!/module\.exports = \{ scan, probationLimit, RULES, EXTRA_RULE_LIST \};/.test(engineSrc)) {
   throw new Error('engine.js 的 module.exports 行变了，请更新 build 脚本');
 }
-engineSrc = engineSrc.replace('module.exports = { scan, probationLimit, RULES };', '');
+engineSrc = engineSrc.replace('module.exports = { scan, probationLimit, RULES, EXTRA_RULE_LIST };', '');
 
 const engineOut = [
   '/* 本文件由 scripts/build-browser.js 自动生成，请勿手改。',
@@ -85,7 +85,7 @@ const engineOut = [
   '',
   engineSrc.split('\n').map((l) => '  ' + l).join('\n'),
   '',
-  '  return { scan, probationLimit, RULES, Region };',
+  '  return { scan, probationLimit, RULES, EXTRA_RULE_LIST, Region };',
   '})();',
   '',
 ].join('\n');

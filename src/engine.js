@@ -420,6 +420,29 @@ function fmt(ts) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/* 扩充自动规则 + 证照临期提醒的可展示清单（供规则配置页统一展示与开关）。
+ * 法条等元信息一律复用 rules.json 里对应 base 条目，与扫描结果同源。 */
+const CERT_EXPIRE_RULE = {
+  id: 'CERT-EXPIRE',
+  cat: 'cert', catLabel: '证照资质', level: 'auto', sev: '中',
+  risk: '特种作业/特种设备证照即将到期',
+  consequence: '无证上岗或证件失效的，责令限期改正，可处罚款；发生事故的从重追责',
+  remedy: ['提前 30 天安排复审', '建立证照到期台账'],
+  owner: 'hr', module: 'cert',
+  law: [{ ref: '《特种作业人员安全技术培训考核管理规定》', text: '特种作业操作证有效期 6 年，每 3 年复审一次；逾期未复审的，证书失效。' }],
+};
+const EXTRA_RULE_LIST = EXTRA_RULES.map((r) => {
+  const meta = metaOf(r.base, r);
+  return {
+    id: r.id, cat: r.cat, catLabel: r.catLabel, level: 'auto',
+    risk: r.risk, sev: r.sev || meta.sev,
+    law: meta.law, consequence: r.consequence || meta.consequence,
+    remedy: r.remedy && r.remedy.length ? r.remedy : meta.remedy,
+    owner: 'hr', module: r.module || '',
+  };
+});
+EXTRA_RULE_LIST.push(CERT_EXPIRE_RULE);
+
 /** 证照到期提醒（不属 116 条规则，归"证照资质"模块的到期提醒） */
 function certExpiring(ctx) {
   const emps = empMap(ctx.employees);
@@ -460,6 +483,8 @@ function scan(data) {
   };
 
   const ruleCfg = data.ruleCfg || {};
+  // 规则开关统一口径：ruleCfg[id].enabled（旧渠道）+ settings.disabledRules（规则配置页实际写入处）
+  const disabled = new Set((data.settings && data.settings.disabledRules) || []);
   // ask 类答案来源：法务确认台账 + 问卷答案（后者优先级低）
   const answers = Object.assign({}, data.surveys || {}, data.confirms || {});
 
@@ -468,7 +493,7 @@ function scan(data) {
   RULES.forEach((rule) => {
     const over = ruleCfg[rule.id];
     const enabled = over && over.enabled !== undefined ? over.enabled : rule.enabled;
-    if (!enabled) return;
+    if (!enabled || disabled.has(rule.id)) return;
 
     if (rule.level === 'auto' && AUTO[rule.id]) {
       const people = AUTO[rule.id](ctx);
@@ -518,8 +543,9 @@ function scan(data) {
     }
   });
 
-  // 扩充的自动测算规则
+  // 扩充的自动测算规则（同样受规则开关控制）
   EXTRA_RULES.forEach((r) => {
+    if (disabled.has(r.id)) return;
     const people = r.pick(ctx);
     if (!people.length) return;
     const meta = metaOf(r.base, r);
@@ -541,25 +567,15 @@ function scan(data) {
     });
   });
 
-  // 证照到期提醒并入清单
-  const cp = certExpiring(ctx);
+  // 证照到期提醒并入清单（同样受规则开关控制）
+  const cp = disabled.has('CERT-EXPIRE') ? [] : certExpiring(ctx);
   if (cp.length) {
-    items.push({
-      ruleId: 'CERT-EXPIRE',
-      level: 'auto',
+    items.push(Object.assign({}, CERT_EXPIRE_RULE, {
+      ruleId: CERT_EXPIRE_RULE.id,
       source: '数据扫描',
-      cat: 'cert',
-      catLabel: '证照资质',
-      risk: '特种作业/特种设备证照即将到期',
-      sev: '中',
-      law: [{ ref: '《特种作业人员安全技术培训考核管理规定》', text: '特种作业操作证有效期 6 年，每 3 年复审一次；逾期未复审的，证书失效。' }],
-      consequence: '无证上岗或证件失效的，责令限期改正，可处罚款；发生事故的从重追责',
-      remedy: ['提前 30 天安排复审', '建立证照到期台账'],
-      owner: 'hr',
-      module: 'cert',
       count: cp.length,
       people: cp,
-    });
+    }));
   }
 
   // 排序：先按严重程度，再按命中人数
@@ -568,4 +584,4 @@ function scan(data) {
   return items;
 }
 
-module.exports = { scan, probationLimit, RULES };
+module.exports = { scan, probationLimit, RULES, EXTRA_RULE_LIST };

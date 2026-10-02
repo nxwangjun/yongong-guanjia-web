@@ -94,7 +94,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    /* ---------- 运行时配置大模型密钥（只影响本进程，不写盘） ---------- */
+    /* ---------- 运行时配置大模型密钥（立即生效，并写入 .env 持久化，重启不丢） ---------- */
     if (pathname === '/api/config-key' && req.method === 'POST') {
       const b = await readBody(req);
       setRuntimeKey({

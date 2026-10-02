@@ -80,12 +80,12 @@ PAGES.risk = {
         const it = items[b.dataset.dispatch];
         try {
           const r = await API.dispatch({ ruleId: it.ruleId, risk: it.risk, owner: 'admin' });
-          if (r.duplicated) toast('已在处置台账中，去「风险处置」看进度');
-          else toast('已派发到风险处置');
+          if (r.duplicated) UI.toast('已在处置台账中，去「风险处置」看进度');
+          else UI.toast('已派发到风险处置');
           b.textContent = '已派发';
           b.disabled = true;
         } catch (e) {
-          toast('派发失败：' + e.message);
+          UI.toast('派发失败：' + e.message);
         }
       };
     });

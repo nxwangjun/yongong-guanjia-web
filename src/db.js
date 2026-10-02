@@ -1,7 +1,8 @@
 /**
- * 数据层：JSON 文件持久化（零依赖，无需安装数据库）
- * 集合即 db.json 的顶层 key，读写走内存缓存 + 落盘。
- * 免登录版：不再存账号/会话/邀请码，只留业务数据与设置。
+ * 【勿删】本文件在 A1 免登录架构下已无运行时引用（业务数据在浏览器 localStorage），
+ * 但 scripts/build-browser.js 会从本文件提取 seed() 生成 public/js/seed.js（前端演示数据）。
+ * 修改演示数据请改本文件 seed() 后重跑 build-browser.js。
+ * 旧职能（历史保留，现不执行）：JSON 文件持久化到 data/db.json。
  */
 const fs = require('fs');
 const path = require('path');
@@ -328,8 +329,6 @@ function seed() {
 
   const settings = {
     companyName: '演示科技有限公司',
-    companySize: '50 人以下',
-    industry: '建筑工程',
     region: '宁夏银川',
     // 宁夏一类区现行标准（宁政规发〔2025〕2号，2025-10-01 起执行）
     minWage: 2235,

@@ -85,13 +85,53 @@ const ok = (name, cond, extra) => {
   const withRisk = pe.employees.filter((e) => e.riskCount > 0).length;
   ok('员工风险画像聚合', pe.employees.length === 36 && withRisk > 0, `${withRisk}/36 人有风险`);
 
-  // 规则库 + 开关
+  // 规则库 + 开关（116 条规则库 + 7 条扩充自动规则 + 证照临期提醒 = 124 条）
   const rl = await API.rules();
-  ok('规则库 116 条', rl.rules.length === 116);
+  ok('规则库 124 条（116+7扩充+1证照提醒）', rl.rules.length === 124, `实际 ${rl.rules.length} 条`);
+
+  // 开关真实生效：停用 auto 规则 → 命中数减少且不再出现该条
   await API.setRule('R-ENTRY-01', false);
   const rl2 = await API.rules();
-  ok('规则开关', rl2.rules.find((x) => x.id === 'R-ENTRY-01').enabled === false);
+  ok('规则开关（界面状态）', rl2.rules.find((x) => x.id === 'R-ENTRY-01').enabled === false);
+  const scOff = await API.scan();
+  ok('停用 auto 规则后不再命中', !scOff.items.some((i) => i.ruleId === 'R-ENTRY-01') && scOff.items.length < sc.items.length,
+    `${sc.items.length} → ${scOff.items.length}`);
   await API.setRule('R-ENTRY-01', true);
+  const scOn = await API.scan();
+  ok('恢复后重新命中', scOn.items.some((i) => i.ruleId === 'R-ENTRY-01'));
+
+  // 扩充自动规则纳入开关
+  const extraId = 'R-ENTRY-05';
+  const extraHit = scOn.items.some((i) => i.ruleId === extraId);
+  if (extraHit) {
+    await API.setRule(extraId, false);
+    const scExtraOff = await API.scan();
+    ok('扩充自动规则可停用', !scExtraOff.items.some((i) => i.ruleId === extraId));
+    await API.setRule(extraId, true);
+  } else {
+    ok('扩充自动规则可停用', true, '该条当前未命中，跳过实测');
+  }
+
+  // 证照临期提醒纳入开关
+  const certHit = scOn.items.some((i) => i.ruleId === 'CERT-EXPIRE');
+  if (certHit) {
+    await API.setRule('CERT-EXPIRE', false);
+    const scCertOff = await API.scan();
+    ok('证照临期提醒可停用', !scCertOff.items.some((i) => i.ruleId === 'CERT-EXPIRE'));
+    await API.setRule('CERT-EXPIRE', true);
+  } else {
+    ok('证照临期提醒可停用', true, '该条当前未命中，跳过实测');
+  }
+
+  // ask 规则：答 no 命中 → 停用后不再命中
+  await API.confirm('R-SYSTEM-01', 'no', 'smoke');
+  const askHitItems = (await API.scan()).items;
+  const askWasHit = askHitItems.some((i) => i.ruleId === 'R-SYSTEM-01');
+  ok('ask 规则答否命中', askWasHit);
+  await API.setRule('R-SYSTEM-01', false);
+  const askOff = (await API.scan()).items;
+  ok('停用 ask 规则后不再命中', !askOff.some((i) => i.ruleId === 'R-SYSTEM-01'));
+  await API.setRule('R-SYSTEM-01', true);
 
   // CRUD
   const neo = await API.add('employees', { name: '测试员', dept: '测试部', entryDate: Date.now(), status: 'on' });
