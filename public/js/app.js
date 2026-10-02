@@ -2,9 +2,9 @@
 const APP = (() => {
   // 检测系统只保留与"风险检测"直接相关的模块；免登录版去掉「成员账户」
   const GROUPS = [
-    { name: '数据', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证件资质'], ['dataio', '数据导入']] },
-    { name: '检测', items: [['home', '检测概览'], ['people', '员工风险画像']] },
-    { name: '风险', items: [['risk', '风险清单'], ['riskconfirm', '合规自查'], ['riskrule', '规则配置'], ['ai', 'AI 问答']] },
+    { name: '结论', items: [['home', '检测概览'], ['people', '员工风险画像'], ['risk', '风险清单']] },
+    { name: '数据填入', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证件资质'], ['dataio', '数据导入']] },
+    { name: '风险确认', items: [['riskconfirm', '合规自查'], ['riskrule', '规则配置'], ['regionset', '地区与判定标准'], ['ai', 'AI 问答']] },
     { name: '系统', items: [['setting', '系统设置']] },
   ];
 
@@ -37,7 +37,7 @@ const APP = (() => {
           </span>
         </div>
         <div class="card">
-          <h2>${UI.esc(h.companyName || '用工风险检测')}</h2>
+          <h2>用工风险检测</h2>
           <p style="color:var(--muted);margin:0">
             导入或录入用工数据 → 系统自动测算每个人身上的用工风险 → 算不出的走合规自查 → 给出整改建议。
           </p>
@@ -123,7 +123,7 @@ const APP = (() => {
     nav.querySelectorAll('.nav-item').forEach((el) => {
       el.onclick = () => (location.hash = '#/' + el.dataset.key);
     });
-    document.getElementById('sideCompany').textContent = s.companyName || '用工风险检测系统';
+    document.getElementById('sideCompany').textContent = '用工风险检测系统';
   }
 
   /* ---------- 状态灯 ---------- */

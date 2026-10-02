@@ -165,12 +165,12 @@ PAGES.dataio = {
   },
 };
 
-/* ============ 系统设置 ============ */
-PAGES.setting = {
-  title: '系统设置',
+/* ============ 地区与判定标准（原系统设置的「所在地区 + 风险判定阈值」） ============ */
+PAGES.regionset = {
+  title: '地区与判定标准',
   async render(c) {
-    const [s, h, rg] = await Promise.all([
-      API.settings(), API.health(),
+    const [s, , rg] = await Promise.all([
+      API.settings(), Promise.resolve({}),
       API.get('/api/regions').catch(() => ({ regions: [] })),
     ]);
     const regions = rg.regions || [];
@@ -181,9 +181,11 @@ PAGES.setting = {
 
     c.innerHTML = `
       <div class="card">
-        <h2>企业信息</h2>
+        <h2>风险判定阈值</h2>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+          选好地区后，下方会自动带出当地的用工标准（最低工资等），带出的数字可以手工改。
+        </p>
         <div class="form-grid">
-          <label>企业名称<input id="companyName" value="${UI.esc(s.companyName || '')}" /></label>
           <label>所在地区
             <select id="region">
               <option value="">（未选择）</option>
@@ -198,16 +200,6 @@ PAGES.setting = {
               ${!inList && cur ? `<option value="${UI.esc(cur)}" selected>${UI.esc(cur)}（自定义）</option>` : ''}
             </select>
           </label>
-        </div>
-        <div id="regionInfo" style="margin-top:12px"></div>
-      </div>
-
-      <div class="card">
-        <h2>风险判定阈值</h2>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          选好地区后，下方会自动带出当地的用工标准（最低工资等），带出的数字可以手工改。
-        </p>
-        <div class="form-grid">
           <label>当地最低工资（元/月）<input id="minWage" type="number" value="${UI.esc(s.minWage ?? 0)}" /></label>
           <label>最低工资档位
             <select id="tierSel"><option value="">（手动填写时不选）</option></select>
@@ -217,22 +209,8 @@ PAGES.setting = {
           <label>月加班上限（小时）<input id="overtimeLimitMonth" type="number" value="${UI.esc(s.overtimeLimitMonth ?? 36)}" /></label>
           <label>证照到期提醒（天）<input id="certExpireDays" type="number" value="${UI.esc(s.certExpireDays ?? 30)}" /></label>
         </div>
-        <div class="toolbar" style="margin-top:12px"><button class="btn primary" id="save">保存设置</button></div>
-      </div>
-      <div class="card">
-        <h2>大模型（AI）配置</h2>
-        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          当前状态：<b>${h.llmEnabled ? '真实大模型已接入（' + UI.esc(h.model) + '）' : '未配置密钥 → 本地规则引擎兜底'}</b>
-        </p>
-        <div class="form-grid">
-          <label>接口地址（OpenAI 兼容）<input id="baseUrl" placeholder="https://api.openai-next.com/v1" /></label>
-          <label>模型名称<input id="model" placeholder="deepseek-v3" /></label>
-          <label class="full">API Key（粘贴后立即生效）<input id="apiKey" type="password" placeholder="sk-…" /></label>
-        </div>
-        <div class="toolbar" style="margin-top:12px">
-          <button class="btn primary" id="saveKey">保存并启用 AI</button>
-          <button class="btn danger" id="clearKey">清空密钥</button>
-        </div>
+        <div id="regionInfo" style="margin-top:12px"></div>
+        <div class="toolbar" style="margin-top:12px"><button class="btn primary" id="save">保存</button></div>
       </div>`;
 
     // ---- 地区 → 自动带出当地用工标准 ----
@@ -283,7 +261,6 @@ PAGES.setting = {
     const num = (id) => Number(c.querySelector('#' + id).value) || 0;
     c.querySelector('#save').onclick = async () => {
       await API.saveSettings({
-        companyName: c.querySelector('#companyName').value,
         region: c.querySelector('#region').value,
         signDeadlineDays: num('signDeadlineDays'),
         contractExpireDays: num('contractExpireDays'),
@@ -295,6 +272,32 @@ PAGES.setting = {
       APP.loadHealth();
       APP.renderNav();
     };
+  },
+};
+
+/* ============ 系统设置（只剩 AI 密钥配置） ============ */
+PAGES.setting = {
+  title: '系统设置',
+  async render(c) {
+    const h = await API.health().catch(() => ({}));
+
+    c.innerHTML = `
+      <div class="card">
+        <h2>大模型（AI）配置</h2>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+          当前状态：<b>${h.llmEnabled ? '真实大模型已接入（' + UI.esc(h.model) + '）' : '未配置密钥 → 本地规则引擎兜底'}</b>
+        </p>
+        <div class="form-grid">
+          <label>接口地址（OpenAI 兼容）<input id="baseUrl" placeholder="https://api.openai-next.com/v1" /></label>
+          <label>模型名称<input id="model" placeholder="deepseek-v3" /></label>
+          <label class="full">API Key（粘贴后立即生效）<input id="apiKey" type="password" placeholder="sk-…" /></label>
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn primary" id="saveKey">保存并启用 AI</button>
+          <button class="btn danger" id="clearKey">清空密钥</button>
+        </div>
+      </div>`;
+
     c.querySelector('#saveKey').onclick = async () => {
       const r = await API.configKey({
         apiKey: c.querySelector('#apiKey').value.trim(),

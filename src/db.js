@@ -327,7 +327,6 @@ function seed() {
   ];
 
   const settings = {
-    companyName: '演示科技有限公司',
     region: '宁夏银川',
     // 宁夏一类区现行标准（宁政规发〔2025〕2号，2025-10-01 起执行）
     minWage: 2235,
