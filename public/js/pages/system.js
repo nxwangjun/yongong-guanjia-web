@@ -13,7 +13,7 @@ PAGES.dataio = {
         </p>
         <div class="toolbar">
           <button class="btn primary" id="expCsv">导出填写员工数据（含填写示例）</button>
-          <button class="btn" id="expJson">导出合规自查数据（填写后导入）</button>
+          <button class="btn" id="expJson">导出填写合规自查数据</button>
         </div>
       </div>
 
@@ -21,10 +21,11 @@ PAGES.dataio = {
         <h2>导入（收客户填好的表）</h2>
         <p style="color:var(--muted);font-size:13px">
           <b>.csv</b>：六张员工数据表（员工/劳动合同/考勤/薪资/社保/证照，分段存放），客户按示例行格式填好即可。<br/>
-          <b>.json</b>：合规自查答案表（48 题 yes/no/unsure/na），只回填合规自查答案，不覆盖员工数据。
+          <b>.xlsx / .csv</b>：合规自查答案表（48 题 yes/no/unsure/na），只回填合规自查答案，不覆盖员工数据。<br/>
+          <b>.json</b>：旧版合规自查答案表，仍兼容导入。
         </p>
         <div class="toolbar" style="margin-top:6px">
-          <input type="file" id="file" accept=".csv,.json" />
+          <input type="file" id="file" accept=".csv,.json,.xlsx" />
           <button class="btn primary" id="impBtn">确认导入</button>
         </div>
         <p style="color:#b45309;font-size:12.5px;margin:8px 0 0">
@@ -44,15 +45,23 @@ PAGES.dataio = {
     c.querySelector('#expJson').onclick = async () => {
       // 合规自查空白答案表：只发题目，不发现存答案，客户填好 yes/no/unsure/na 后回导
       const qd = await API.quiz();
-      const blank = {};
+      const rows = [];
       (qd.categories || []).forEach((cat) =>
-        (cat.questions || []).forEach((q) => { blank[q.id] = ''; })
+        (cat.questions || []).forEach((q) => {
+          rows.push({ 题号: q.id, 问题: q.text, 答案: '' });
+        })
       );
+      const ws = XLSX.utils.json_to_sheet(rows);
+      // 问题列宽一点，方便 WPS/Excel 直接阅读
+      ws['!cols'] = [{ wch: 18 }, { wch: 70 }, { wch: 10 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '合规自查填写表');
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       download(
-        new Blob([JSON.stringify({ _type: 'survey-blank', questions: blank }, null, 2)], { type: 'application/json' }),
-        '小哲用工风险检测_合规自查填写表_' + new Date().toISOString().slice(0, 10) + '.json'
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        '小哲用工风险检测_合规自查填写表_' + new Date().toISOString().slice(0, 10) + '.xlsx'
       );
-      UI.toast('已导出合规自查填写表（48 题空白）');
+      UI.toast('已导出合规自查填写表（' + rows.length + ' 题，WPS/Excel 可直接打开）');
     };
 
     c.querySelector('#expCsv').onclick = async () => {
@@ -73,6 +82,39 @@ PAGES.dataio = {
       picked = f;
       UI.toast('已选择：' + f.name);
     };
+
+    // 把自查表（xlsx/csv）解析成 { ruleId: answer }
+    function parseSurveyRows(rows) {
+      // 找表头
+      let hIdx = -1;
+      for (let i = 0; i < Math.min(rows.length, 5); i++) {
+        const r = rows[i].map((c) => String(c || '').trim());
+        if (r.includes('题号') && r.includes('答案')) { hIdx = i; break; }
+      }
+      if (hIdx < 0) return null;
+      const headers = rows[hIdx].map((c) => String(c || '').trim());
+      const idIdx = headers.indexOf('题号');
+      const ansIdx = headers.indexOf('答案');
+      if (idIdx < 0 || ansIdx < 0) return null;
+      const answers = {};
+      for (let i = hIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || !r.length) continue;
+        const rid = String(r[idIdx] || '').trim();
+        const v = String(r[ansIdx] || '').trim();
+        if (rid && (v === 'yes' || v === 'no' || v === 'unsure' || v === 'na')) answers[rid] = v;
+      }
+      return answers;
+    }
+    async function importSurveyAnswers(answers) {
+      const cnt = Object.keys(answers).length;
+      if (!cnt) return UI.toast('文件里没有有效答案（请在「答案」列填 yes / no / unsure / na）');
+      UI.confirmBox(`将从「${picked.name}」回填 ${cnt} 条合规自查答案（只写答案，不动员工数据），确定继续？`, async () => {
+        await API.confirmAnswers(answers);
+        UI.toast(`已回填 ${cnt} 条合规自查答案`);
+        setTimeout(() => location.reload(), 800);
+      });
+    }
 
     c.querySelector('#impBtn').onclick = async () => {
       if (!picked) return UI.toast('请先选择文件');
@@ -107,8 +149,24 @@ PAGES.dataio = {
           });
           return;
         }
+        if (name.endsWith('.xlsx')) {
+          const buf = await picked.arrayBuffer();
+          const wb = XLSX.read(buf, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          const answers = parseSurveyRows(rows);
+          if (!answers) return UI.toast('Excel 里没找到「题号」「答案」列，请用本站导出的模板填写');
+          return importSurveyAnswers(answers);
+        }
         if (name.endsWith('.csv')) {
           const text = await picked.text();
+          // 先尝试识别为合规自查答案 CSV（3 列：题号/问题/答案）
+          const csvRows = text.split(/\r?\n/).filter((l) => l.trim()).map((l) => l.split(',').map((c) => c.trim()));
+          const surveyAnswers = parseSurveyRows(csvRows);
+          if (surveyAnswers && Object.keys(surveyAnswers).length > 0) {
+            return importSurveyAnswers(surveyAnswers);
+          }
+          // 否则按六表员工数据导入
           const byCol = window.CSV.csvToAll(text);
           const cols = Object.keys(byCol).filter((k) => byCol[k].length);
           if (!cols.length) {
@@ -147,7 +205,7 @@ PAGES.dataio = {
           ]);
           return;
         }
-        UI.toast('只支持 .json / .csv');
+        UI.toast('只支持 .json / .csv / .xlsx');
       } catch (e) {
         UI.toast('导入失败：' + e.message);
       }

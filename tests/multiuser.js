@@ -70,6 +70,7 @@ require(P('data-bundle.js'));
 require(P('seed.js'));
 require(P('engine-browser.js'));
 require(P('csv.js'));
+global.XLSX = require(P('xlsx.full.min.js'));
 require(P('api.js'));
 // ui.js 顶层是 const UI（浏览器里跨脚本可见，Node require 下不外露），手动挂全局
 require('vm').runInThisContext(
@@ -835,19 +836,52 @@ async function renderPage(pageKey) {
     const csvText = window.CSV.allToCsv(null, true);
     ok(u, '导出 CSV 是六表合一模板（含 #employees 段头）', csvText.includes('#employees'));
     ok(u, '导出 CSV 带示例行（含「张三」示例）', csvText.includes('张三'));
-    // 2) 导出 JSON 是合规自查空白答案表
+    // 2) 导出 xlsx 是合规自查空白答案表（48 题）
     const qd = await API.quiz();
-    const blank = {};
-    (qd.categories || []).forEach((cat) => (cat.questions || []).forEach((q) => { blank[q.id] = ''; }));
-    const blankJson = { _type: 'survey-blank', questions: blank };
-    ok(u, '导出 JSON 含 48 题空白答案', Object.keys(blankJson.questions).length === 48, `实际 ${Object.keys(blankJson.questions).length} 题`);
-    // 3) 回填自查答案（模拟客户填好 3 题）
-    const filled = { _type: 'survey-blank', questions: { 'R-RECRUIT-01': 'no', 'R-RECRUIT-02': 'yes', 'R-INTERVIEW-01': 'unsure' } };
-    await API.confirmAnswers(filled.questions);
+    const rows = [];
+    (qd.categories || []).forEach((cat) => (cat.questions || []).forEach((q) => rows.push({ 题号: q.id, 问题: q.text, 答案: '' })));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '合规自查填写表');
+    const xlsxBuf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+    ok(u, '导出 xlsx 含 48 题空白答案', rows.length === 48, `实际 ${rows.length} 题`);
+    // 3) 回填自查答案：模拟客户填好 xlsx 后回导
+    const filledRows = rows.map((r) => ({ ...r }));
+    const idx1 = filledRows.findIndex((r) => r.题号 === 'R-RECRUIT-01');
+    const idx2 = filledRows.findIndex((r) => r.题号 === 'R-RECRUIT-02');
+    const idx3 = filledRows.findIndex((r) => r.题号 === 'R-INTERVIEW-01');
+    filledRows[idx1].答案 = 'no';
+    filledRows[idx2].答案 = 'yes';
+    filledRows[idx3].答案 = 'unsure';
+    const fw = XLSX.utils.book_new();
+    const fws = XLSX.utils.json_to_sheet(filledRows);
+    XLSX.utils.book_append_sheet(fw, fws, '合规自查填写表');
+    const filledBuf = XLSX.write(fw, { bookType: 'xlsx', type: 'buffer' });
+    // 解析回导的 xlsx（模拟 system.js 导入逻辑）
+    const fwb = XLSX.read(filledBuf, { type: 'buffer' });
+    const parsed = XLSX.utils.sheet_to_json(fwb.Sheets[fwb.SheetNames[0]], { header: 1, defval: '' });
+    const hIdx = parsed.findIndex((r) => r.includes('题号') && r.includes('答案'));
+    const idIdx = parsed[hIdx].indexOf('题号');
+    const ansIdx = parsed[hIdx].indexOf('答案');
+    const answers = {};
+    for (let i = hIdx + 1; i < parsed.length; i++) {
+      const r = parsed[i];
+      const rid = String(r[idIdx] || '').trim();
+      const v = String(r[ansIdx] || '').trim();
+      if (rid && (v === 'yes' || v === 'no' || v === 'unsure' || v === 'na')) answers[rid] = v;
+    }
+    await API.confirmAnswers(answers);
     const db = await API.exportAll();
     ok(u, '回填后 confirms 含 3 条答案', Object.keys(db.confirms).length === 3, `实际 ${Object.keys(db.confirms).length} 条`);
     ok(u, 'R-RECRUIT-01 答案为 no', db.confirms['R-RECRUIT-01'] && db.confirms['R-RECRUIT-01'].answer === 'no');
-    // 4) 旧版整体备份仍能识别（兼容）
+    ok(u, 'R-RECRUIT-02 答案为 yes', db.confirms['R-RECRUIT-02'] && db.confirms['R-RECRUIT-02'].answer === 'yes');
+    ok(u, 'R-INTERVIEW-01 答案为 unsure', db.confirms['R-INTERVIEW-01'] && db.confirms['R-INTERVIEW-01'].answer === 'unsure');
+    // 4) 旧版 JSON 仍兼容
+    const blankJson = { _type: 'survey-blank', questions: { 'R-RECRUIT-01': 'na' } };
+    await API.confirmAnswers(blankJson.questions);
+    const db2 = await API.exportAll();
+    ok(u, '旧版 JSON 答案仍能回填', db2.confirms['R-RECRUIT-01'] && db2.confirms['R-RECRUIT-01'].answer === 'na');
+    // 5) 旧版整体备份仍能识别（兼容）
     const oldDump = await API.exportAll();
     ok(u, '旧版备份含 employees 数组', Array.isArray(oldDump.employees) && oldDump.employees.length > 0);
   }
