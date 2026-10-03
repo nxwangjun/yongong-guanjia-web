@@ -53,33 +53,35 @@ const APP = (() => {
         summaryHtml = `<p style="color:var(--muted);margin:0">暂未扫出风险。先去「数据填入」录入或导入员工数据，系统会自动测算；算不出的项目到「合规自查」逐条确认。</p>`;
       } else {
         // 整改优先级建议：按"先止血（高危）→ 再补齐（中危）→ 后规范（低危）"给行动顺序
-        const priority = [];
-        if (highItems.length) priority.push(`<b style="color:#dc2626">第一步</b> 先处理 ${highItems.length} 类高危问题（${topHigh.map((i) => UI.esc(i.risk)).join('；')}${highItems.length > 3 ? ' 等' : ''}），这类最容易引发仲裁赔偿`);
-        if (midItems.length) priority.push(`<b style="color:#d97706">第二步</b> 补齐 ${midItems.length} 类中危事项的手续与台账，防止小毛病累积成证据链`);
-        if (lowItems.length) priority.push(`<b style="color:#6b7280">第三步</b> 规范 ${lowItems.length} 类低风险事项，纳入日常管理即可`);
+        const steps = [];
+        if (highItems.length) steps.push({ cls: 'red', label: '第一步', text: `先处理 <b>${highItems.length}</b> 类高危问题：${topHigh.map((i) => UI.esc(i.risk)).join('；')}${highItems.length > 3 ? ' 等' : ''}。这类最容易引发仲裁赔偿。` });
+        if (midItems.length) steps.push({ cls: 'amber', label: '第二步', text: `补齐 <b>${midItems.length}</b> 类中危事项的手续与台账，防止小毛病累积成证据链。` });
+        if (lowItems.length) steps.push({ cls: 'gray', label: '第三步', text: `规范 <b>${lowItems.length}</b> 类低风险事项，纳入日常管理即可。` });
         summaryHtml = `
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
             <div class="stat"><b>${items.length}</b><span>风险类别合计</span></div>
             <div class="stat alert"><b>${highItems.length}</b><span>高危（优先处理）</span></div>
             <div class="stat"><b>${midItems.length}</b><span>中危</span></div>
             <div class="stat"><b>${lowItems.length}</b><span>低危</span></div>
           </div>
-          <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:12.5px;color:var(--muted)">
-            <b style="color:var(--text)">分级说明（为什么这么分）：</b><br/>
-            <b style="color:#dc2626">高危</b>＝直接违反法律强制性规定，单人/单次赔付或处罚金额显著（如二倍工资、赔偿金、补缴社保并滞纳金），事后补救难以完全消除责任，<b>应当立即处理</b>；<br/>
-            <b style="color:#d97706">中危</b>＝虽违反强制性规定，但金额有限，可通过补发、补签、补缴、补休等方式基本挽回，<b>建议限期整改</b>；<br/>
-            <b style="color:#6b7280">低危</b>＝以留痕、公示、文本规范为主的合规要求，通常无直接金钱给付责任，<b>纳入日常管理规范即可</b>。
+          <div class="legend">
+            分级：
+            <span class="lg red">高危 · 立即处理</span>
+            <span class="lg amber">中危 · 限期整改</span>
+            <span class="lg gray">低危 · 日常规范</span>
+            <span class="lg-link" id="btnSevHelp">分级依据 ▸</span>
           </div>
           <p style="margin:0 0 10px">
             本次共扫出 <b>${items.length}</b> 类用工风险，其中 <b style="color:#dc2626">${highItems.length} 类建议优先处理</b>，
             涉及 <b>${peopleCnt}</b> 人次（${affected} 名员工身上有至少一类风险）。
           </p>
-          <p style="margin:0 0 6px"><b>问题集中在：</b>${cats
-            .map((k) => `${UI.esc(k.name)} ${k.cnt} 类${k.high ? `（含优先处理 ${k.high} 类）` : ''}`)
-            .join('、')}</p>
-          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:10px 0">
-            <b>整改建议（按优先级）：</b>
-            ${priority.map((p) => `<p style="margin:6px 0 0;font-size:13.5px">${p}</p>`).join('')}
+          <p style="margin:0 0 2px;font-size:13px;color:var(--muted)"><b style="color:var(--text)">问题集中在：</b></p>
+          <div class="cat-chips">${cats
+            .map((k) => `<span class="cat-chip">${UI.esc(k.name)} <b>${k.cnt}</b> 类${k.high ? ` · <span class="hi">高危 ${k.high}</span>` : ''}</span>`)
+            .join('')}</div>
+          <p style="margin:14px 0 2px;font-size:13px;color:var(--muted)"><b style="color:var(--text)">整改建议（按优先级）：</b></p>
+          <div class="steps" style="grid-template-columns:repeat(${steps.length},1fr)">
+            ${steps.map((s, i) => `<div class="step"><span class="no ${s.cls}">${i + 1}</span>${s.text}</div>`).join('')}
           </div>
           <p style="margin:0 0 6px;color:var(--muted);font-size:12.5px">⚠️ 以上为系统按录入数据自动生成的初步自查提示，不构成正式法律意见；具体处置建议结合贵司实际情况咨询律师。</p>
           <div class="toolbar" style="margin-top:8px">
@@ -131,6 +133,22 @@ const APP = (() => {
         );
       };
       c.querySelector('#btnCopyOpinion').onclick = () => copyText(opText, null);
+
+      /* ---- 分级依据说明（图例旁的「分级依据 ▸」） ---- */
+      const sevHelpBtn = c.querySelector('#btnSevHelp');
+      if (sevHelpBtn) sevHelpBtn.onclick = () =>
+        UI.modal(
+          '风险分级依据',
+          `<div style="font-size:13.5px;line-height:1.9">
+            <p style="margin:0 0 10px"><b style="color:#dc2626">高危 · 应当立即处理</b><br/>
+            直接违反法律强制性规定，单人/单次赔付或处罚金额显著（如未签合同二倍工资、违法解除赔偿金、补缴社保并滞纳金），事后补救难以完全消除责任。</p>
+            <p style="margin:0 0 10px"><b style="color:#d97706">中危 · 建议限期整改</b><br/>
+            虽违反强制性规定，但金额有限，可通过补发、补签、补缴、补休等方式基本挽回。</p>
+            <p style="margin:0"><b style="color:#6b7280">低危 · 纳入日常管理规范</b><br/>
+            以留痕、公示、文本规范为主的合规要求，通常无直接金钱给付责任。</p>
+          </div>`,
+          [{ text: '知道了', cls: 'primary', onClick: () => UI.closeModal() }]
+        );
 
       /* ---- 演示数据横幅按钮 ---- */
       c.querySelector('#btnWipe').onclick = () =>

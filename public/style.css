@@ -96,7 +96,7 @@ body {
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
   padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13.5px; transition: all .15s;
 }
-.btn:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn:hover { border-color: var(--primary); color: var(--primary); }
 .btn.primary { background: linear-gradient(135deg, #2f62f0, #1d4ed8); border-color: #1d4ed8; color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(29,78,216,.3); }
 .btn.primary:hover { background: linear-gradient(135deg, #1d4ed8, #1e40af); color: #fff; box-shadow: 0 4px 12px rgba(29,78,216,.4); }
 .btn.danger { color: var(--danger); border-color: #fecaca; }
@@ -159,14 +159,36 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 14px; }
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px; box-shadow: var(--shadow-sm); border-left: 4px solid var(--primary);
-  transition: box-shadow .18s, transform .18s;
+  padding: 14px 18px; box-shadow: var(--shadow-sm);
 }
-.stat:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.stat b { font-size: 26px; display: block; line-height: 1.2; }
+.stat b { font-size: 27px; display: block; line-height: 1.15; font-weight: 700; letter-spacing: .3px; }
 .stat span { font-size: 12.5px; color: var(--muted); }
-.stat.alert { border-left-color: var(--danger); }
+.stat.alert { background: #fdf6f6; border-color: #f3d4d4; }
 .stat.alert b { color: var(--danger); }
+
+/* —— 分级图例 / 类别胶囊 / 三步建议 —— */
+.legend { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
+.legend .lg { padding: 2px 11px; border-radius: 999px; font-weight: 600; font-size: 12px; }
+.legend .lg.red { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.legend .lg.amber { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+.legend .lg.gray { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
+.legend .lg-link { color: var(--primary); cursor: pointer; font-size: 12.5px; }
+.legend .lg-link:hover { text-decoration: underline; }
+
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+.cat-chip { background: #f6f8fb; border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: #374151; }
+.cat-chip b { color: var(--text); }
+.cat-chip .hi { color: var(--danger); font-weight: 600; }
+
+.steps { display: grid; gap: 10px; margin: 8px 0 10px; }
+.step { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: #374151; line-height: 1.6; }
+.step .no {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  color: #fff; font-size: 12px; font-weight: 700; margin-right: 7px; vertical-align: -4px;
+}
+.step .no.red { background: #dc2626; }
+.step .no.amber { background: #d97706; }
+.step .no.gray { background: #6b7280; }
 
 /* —— 风险清单 —— */
 .risk-item { border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: 10px; background: var(--surface); padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: box-shadow .18s; }
