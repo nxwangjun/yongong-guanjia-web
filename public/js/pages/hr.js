@@ -28,7 +28,7 @@ PAGES.contract = {
     return UI.crudPage(c, {
       title: '劳动合同',
       col: 'contracts',
-      desc: '签订、续签、到期提醒。试用期上限由系统按合同期限自动核算。',
+      desc: '签订、续签、到期提醒。试用期上限由系统按合同期限自动核算；非全日制用工约定试用期会直接触发风险。',
       fields: [
         { k: 'employeeId', t: '员工', type: 'emp', required: true },
         { k: 'type', t: '合同类型', type: 'select', options: [['fixed', '固定期限'], ['open', '无固定期限'], ['task', '以完成一定工作任务为期限']] },
@@ -36,6 +36,7 @@ PAGES.contract = {
         { k: 'probationMonths', t: '试用期（月）', type: 'number' },
         { k: 'signDate', t: '签订日期', type: 'date' },
         { k: 'endDate', t: '到期日期', type: 'date' },
+        { k: 'empType', t: '用工形式', type: 'select', options: [['full', '全日制'], ['parttime', '非全日制']] },
       ],
     });
   },

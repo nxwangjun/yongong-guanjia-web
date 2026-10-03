@@ -105,7 +105,7 @@ async function renderPage(pageKey) {
     freshBrowser();
     const u = 'U1张老板(演示数据)';
     const sc = await API.scan();
-    ok(u, '演示数据扫出 18 类风险', sc.items.length === 18, `命中 ${sc.items.length} 类`);
+    ok(u, '演示数据扫出 19 类风险', sc.items.length === 19, `命中 ${sc.items.length} 类`);
     const high = sc.items.filter((i) => i.sev === '高').length;
     const home = await renderPage('home');
     ok(u, '首页风险概要渲染出分级统计', home._html.includes('高危（优先处理）') && home._html.includes('整改建议（按优先级）'));
@@ -132,10 +132,10 @@ async function renderPage(pageKey) {
     ok(u, '结论点名到人', hit && hit.people[0].name === '李小花');
     const pe = await API.riskByEmployee();
     const li = pe.employees.find((e) => e.name === '李小花');
-    // 没签合同 + 没参保记录，应正好命中 R-ENTRY-01 与 R-SOCIAL-01 两条
+    // 没签合同 + 没参保记录（入职超30天），应正好命中 R-ENTRY-01、R-SOCIAL-01、R-WELFARE-01-AUTO 三条
     const liRules = li.risks.map((r) => r.ruleId).sort().join(',');
-    ok(u, '画像里李小花正好 2 项风险（未签合同+未缴社保）',
-      li.riskCount === 2 && liRules === 'R-ENTRY-01,R-SOCIAL-01', liRules);
+    ok(u, '画像里李小花正好 3 项风险（未签合同+未缴社保+超30日未社保登记）',
+      li.riskCount === 3 && liRules === 'R-ENTRY-01,R-SOCIAL-01,R-WELFARE-01-AUTO', liRules);
   }
 
   /* ================= 用户3 王经理：补签合同后风险消失 ================= */
@@ -292,7 +292,7 @@ async function renderPage(pageKey) {
       for (const row of parsed[col]) await API.add(col, row);
     }
     sc = await API.scan();
-    ok(u, 'CSV 导出→导入后风险结论还原', sc.items.length === 18, `实际 ${sc.items.length}`);
+    ok(u, 'CSV 导出→导入后风险结论还原', sc.items.length === 19, `实际 ${sc.items.length}`);
   }
 
   /* ================= 用户11 钱HR：CSV 文本导入员工 ================= */
@@ -386,7 +386,7 @@ async function renderPage(pageKey) {
     await API.exportAll(); // 演示数据 18 类
     const sc = await API.scan();
     const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: sc.items.reduce((s, i) => s + (i.people || []).length, 0), affected: 10 });
-    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文', '不构成正式法律意见'];
+    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文', '检测结论仅供参考'];
     ok(u, '意见书六段结构齐全', need.every((k) => op.includes(k)), need.filter((k) => !op.includes(k)).join('缺:') || '完整');
     ok(u, '意见书含分级风险明细（（一）高危）', op.includes('（一）高危风险'));
     // 法条附件去重
@@ -396,8 +396,8 @@ async function renderPage(pageKey) {
     // 空态：清空后是「未发现问题」版本
     await wipeAll();
     const opEmpty = window.buildOpinion([], { empTotal: 0, peopleCnt: 0, affected: 0 });
-    ok(u, '无风险时意见书为「未发现问题」版本且仍带免责声明',
-      opEmpty.includes('未发现劳动用工风险事项') && opEmpty.includes('不构成正式法律意见'));
+    ok(u, '无风险时意见书为「未发现问题」版本且带仅供参考提示',
+      opEmpty.includes('未发现劳动用工风险事项') && opEmpty.includes('检测结论仅供参考'));
   }
 
   /* ================= 用户16 沈老板：hybrid 规则开关 ================= */
@@ -411,11 +411,43 @@ async function renderPage(pageKey) {
     await API.setRule('R-SPECIAL-01', false);
     sc = await API.scan();
     ok(u, '停用 hybrid 规则后不再命中', !sc.items.some((i) => i.ruleId === 'R-SPECIAL-01'));
-    // 规则配置页渲染统计口径（18 自动 + 106 自查含 1 混合）
+    // 规则配置页渲染统计口径（20 自动 + 106 自查含 1 混合）
     const page = await renderPage('riskrule');
-    ok(u, '规则配置页口径：18 自动 + 106 自查（含混合）',
-      page._html.includes('18 条由数据自动算出') && page._html.includes('106 条需台账确认或问卷作答') && page._html.includes('混合方式'),
+    ok(u, '规则配置页口径：20 自动 + 106 自查（含混合）',
+      page._html.includes('20 条由数据自动算出') && page._html.includes('106 条需台账确认或问卷作答') && page._html.includes('混合方式'),
       page._html.match(/共 \d+ 条由数据自动算出，\s*\d+ 条需台账确认或问卷作答（含 \d+ 条混合方式[^）]*）/) ? '口径正确' : '口径文案未见');
+  }
+
+  /* ================= 用户21 新增自动规则回归：30日社保登记 + 非全日制试用期 ================= */
+  {
+    freshBrowser();
+    const u = 'U21新增自动规则';
+    await wipeAll();
+    const d40 = new Date(now - 40 * DAY).toISOString().slice(0, 10);
+    const d10 = new Date(now - 10 * DAY).toISOString().slice(0, 10);
+    // 入职 40 天无社保 → 命中 R-WELFARE-01-AUTO
+    const e1 = await API.add('employees', { name: '赵社保', dept: '生产部', entryDate: d40, status: 'active' });
+    let sc = await API.scan();
+    ok(u, '入职40天无社保 → 命中 R-WELFARE-01-AUTO', sc.items.some((i) => i.ruleId === 'R-WELFARE-01-AUTO'));
+    // 改回入职 10 天 → 消失
+    await API.update('employees', e1._id, { entryDate: d10 });
+    sc = await API.scan();
+    ok(u, '入职10天无社保 → 不误报', !sc.items.some((i) => i.ruleId === 'R-WELFARE-01-AUTO'));
+    // 非全日制约定试用期 → 命中 R-PART-02-AUTO
+    await wipeAll();
+    const e2 = await API.add('employees', { name: '钱兼职', dept: '后勤', entryDate: d10, status: 'active' });
+    await API.add('socials', { employeeId: e2._id, insured: true, base: 2235 });
+    const ct = await API.add('contracts', { employeeId: e2._id, empType: 'parttime', probationMonths: 1, type: 'fixed', months: 6 });
+    sc = await API.scan();
+    ok(u, '非全日制约定试用期 → 命中 R-PART-02-AUTO', sc.items.some((i) => i.ruleId === 'R-PART-02-AUTO'));
+    // 改全日制 → 消失
+    await API.update('contracts', ct._id, { empType: 'full' });
+    sc = await API.scan();
+    ok(u, '全日制约定试用期 → 不误报', !sc.items.some((i) => i.ruleId === 'R-PART-02-AUTO'));
+    // 旧数据无 empType 字段 → 不误报（向后兼容）
+    await API.update('contracts', ct._id, { empType: '' });
+    sc = await API.scan();
+    ok(u, '旧数据无用工形式 → 不误报', !sc.items.some((i) => i.ruleId === 'R-PART-02-AUTO'));
   }
 
   /* ================= 用户17 韩HR：数据导入页渲染 ================= */

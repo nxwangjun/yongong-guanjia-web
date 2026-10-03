@@ -1,13 +1,10 @@
 /* 员工风险画像 —— 检测系统的核心视图：逐人看风险 */
 window.PAGES = window.PAGES || {};
 
-const DISCLAIMER2 =
-  '⚠️ 检测结论由系统依据录入数据与确认台账自动生成，仅供初步自查参考，不构成正式法律意见，也不替代律师当面咨询与阅卷。';
-
 PAGES.people = {
   title: '员工风险画像',
   async render(c) {
-    c.innerHTML = `<div class="notice">${DISCLAIMER2}</div><div class="card">正在测算…</div>`;
+    c.innerHTML = `<div class="card">正在测算…</div>`;
     let data;
     try {
       data = await API.get('/api/risk/by-employee');
@@ -22,7 +19,6 @@ PAGES.people = {
     const affected = emps.filter((e) => e.riskCount > 0).length;
 
     c.innerHTML = `
-      <div class="notice">${DISCLAIMER2}</div>
       <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${emps.length}</b><span>员工总数</span></div>
         <div class="stat alert"><b>${affected}</b><span>存在风险的员工</span></div>

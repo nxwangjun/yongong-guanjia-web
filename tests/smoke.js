@@ -72,9 +72,9 @@ const ok = (name, cond, extra) => {
   ok('首次打开自动载入演示数据', d0.employees.length === 36 && d0.contracts.length === 34,
     `员工=${d0.employees.length}, 合同=${d0.contracts.length}`);
 
-  // 本地扫描：36 人演示数据应命中 18 类（17 类风险 + 证照临期提醒）
+  // 本地扫描：36 人演示数据应命中 19 类（17 类风险 + 证照临期提醒 + 30日社保登记）
   const sc = await API.scan();
-  ok('本地风险扫描', sc.items.length === 18, `命中 ${sc.items.length} 类`);
+  ok('本地风险扫描', sc.items.length === 19, `命中 ${sc.items.length} 类`);
 
   // 统计
   const st = await API.stats();
@@ -85,9 +85,9 @@ const ok = (name, cond, extra) => {
   const withRisk = pe.employees.filter((e) => e.riskCount > 0).length;
   ok('员工风险画像聚合', pe.employees.length === 36 && withRisk > 0, `${withRisk}/36 人有风险`);
 
-  // 规则库 + 开关（116 条规则库 + 7 条扩充自动规则 + 证照临期提醒 = 124 条）
+  // 规则库 + 开关（116 条规则库 + 9 条扩充自动规则 + 证照临期提醒 = 126 条）
   const rl = await API.rules();
-  ok('规则库 124 条（116+7扩充+1证照提醒）', rl.rules.length === 124, `实际 ${rl.rules.length} 条`);
+  ok('规则库 126 条（116+9扩充+1证照提醒）', rl.rules.length === 126, `实际 ${rl.rules.length} 条`);
 
   // 开关真实生效：停用 auto 规则 → 命中数减少且不再出现该条
   await API.setRule('R-ENTRY-01', false);

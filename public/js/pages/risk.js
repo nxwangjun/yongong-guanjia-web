@@ -1,9 +1,6 @@
 /* 法务风险模块：风险清单 / 规则配置 / 合规自查 / AI 问答 / 自检问卷 */
 window.PAGES = window.PAGES || {};
 
-const DISCLAIMER =
-  '⚠️ 本报告由自助诊断工具生成，仅供初步自查参考，不构成正式法律意见，也不替代律师当面咨询与阅卷。';
-
 function sevRank(s) {
   return s === '高' ? 0 : s === '中' ? 1 : 2;
 }
@@ -12,7 +9,7 @@ function sevRank(s) {
 PAGES.risk = {
   title: '用工风险清单',
   async render(c) {
-    c.innerHTML = `<div class="notice">${DISCLAIMER}</div><div class="card">正在扫描…</div>`;
+    c.innerHTML = `<div class="card">正在扫描…</div>`;
     let data;
     try {
       data = await API.scan();
@@ -30,7 +27,6 @@ PAGES.risk = {
       : '';
 
     c.innerHTML = `
-      <div class="notice">${DISCLAIMER}</div>
       ${wageHint}
       <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${items.length}</b><span>需关注风险点</span></div>
@@ -270,7 +266,6 @@ PAGES.survey = {
     const total = cats.reduce((s, x) => s + x.questions.length, 0);
 
     c.innerHTML = `
-      <div class="notice">${DISCLAIMER}</div>
       <div class="card">
         <div class="toolbar"><h2 style="margin:0">用工自检问卷</h2><div class="spacer"></div><span id="prog">已答 0 / ${total}</span></div>
         <div class="progress-bar"><div class="progress-fill" id="fill"></div></div>

@@ -83,7 +83,7 @@ const APP = (() => {
           <div class="steps" style="grid-template-columns:repeat(${steps.length},1fr)">
             ${steps.map((s, i) => `<div class="step"><span class="no ${s.cls}">${i + 1}</span>${s.text}</div>`).join('')}
           </div>
-          <p style="margin:0 0 6px;color:var(--muted);font-size:12.5px">⚠️ 以上为系统按录入数据自动生成的初步自查提示，不构成正式法律意见；具体处置建议结合贵司实际情况咨询律师。</p>
+          <p style="margin:0 0 6px;color:var(--muted);font-size:12.5px">检测结论仅供参考。</p>
           <div class="toolbar" style="margin-top:8px">
             <button class="btn primary" onclick="location.hash='#/risk'">去用工风险清单逐条处理</button>
             <button class="btn" onclick="location.hash='#/people'">看员工风险画像</button>
@@ -92,7 +92,7 @@ const APP = (() => {
 
       c.innerHTML = `
         <div class="demo-banner">
-          <span>📌 这是<b>演示数据</b>，方便直接体验。数据只存在您的浏览器里（localStorage），不上传服务器。</span>
+          <span>📌 这是<b>演示数据</b>，方便直接体验。选择清空演示数据后，填入真实信息即可自动检测用工风险。</span>
           <span class="demo-banner-btns">
             <button class="btn small danger" id="btnWipe">清空演示数据</button>
             <button class="btn small" id="btnReseed">重新载入演示数据</button>
@@ -243,7 +243,7 @@ const APP = (() => {
       }
     }
 
-    t += '⚠️ 本报告由自助诊断工具生成，仅供初步自查参考，不构成正式法律意见，也不替代律师当面咨询与阅卷。\n';
+    t += '检测结论仅供参考。\n';
     return t;
   }
   window.buildOpinion = buildOpinion;

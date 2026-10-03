@@ -480,6 +480,46 @@ window.Engine = (() => {
     },
   
     {
+      id: 'R-WELFARE-01-AUTO',  // 不与规则库 ask 题 R-WELFARE-01 撞号
+      cat: 'entry_welfare', catLabel: '法定福利', base: 'R-WELFARE-01', sev: '高',
+      risk: '自用工之日起 30 日内未办理社会保险登记',
+      consequence: '由社会保险行政部门责令限期改正；逾期不改正的，对用人单位处应缴社保费一倍以上三倍以下罚款',
+      remedy: ['立即补办社保登记并参保', '建立入职 30 日内参保的办理时限台账'],
+      module: 'social',
+      pick(ctx) {
+        const insured = {};
+        (ctx.socials || []).forEach((s) => s.employeeId && s.insured && (insured[s.employeeId] = true));
+        return (ctx.employees || [])
+          .filter((e) => e.status !== 'left' && !insured[e._id] && days(e.entryDate, ctx.today) > 30)
+          .map((e) => ({
+            employeeId: e._id, name: nameOf(e), dept: deptOf(e),
+            detail: `入职已 ${days(e.entryDate, ctx.today)} 天（超 30 日），仍无参保记录`,
+          }));
+      },
+    },
+  
+    {
+      id: 'R-PART-02-AUTO',  // 不与规则库 ask 题 R-PART-02 撞号
+      cat: 'special_parttime', catLabel: '非全日制', base: 'R-PART-02', sev: '中',
+      risk: '与非全日制劳动者约定试用期（法律明确禁止）',
+      consequence: '违法约定的试用期无效；由劳动行政部门责令改正，已履行的按转正工资标准支付赔偿金',
+      remedy: ['删除非全日制合同中的试用期条款', '已履行的按《劳动合同法》第 83 条核算赔偿'],
+      module: 'contract',
+      pick(ctx) {
+        const emps = empMap(ctx.employees);
+        return (ctx.contracts || [])
+          .filter((c) => c.empType === 'parttime' && Number(c.probationMonths) > 0)
+          .map((c) => {
+            const e = emps[c.employeeId] || {};
+            return {
+              employeeId: c.employeeId, name: nameOf(e), dept: deptOf(e),
+              detail: `非全日制用工约定了 ${c.probationMonths} 个月试用期（《劳动合同法》第 70 条禁止）`,
+            };
+          });
+      },
+    },
+  
+    {
       id: 'R-WAGE-05-AUTO',  // 不与规则库 ask 题 R-WAGE-05 撞号
       cat: 'entry_wage', catLabel: '工资', base: 'R-WAGE-02', sev: '中',
       risk: '加班费占月工资比重超过 30%（异常偏高）',
