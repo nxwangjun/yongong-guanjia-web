@@ -388,8 +388,9 @@ async function renderPage(pageKey) {
     await API.exportAll(); // 演示数据 18 类
     const sc = await API.scan();
     const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: sc.items.reduce((s, i) => s + (i.people || []).length, 0), affected: 10 });
-    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文', '检测结论仅供参考'];
+    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文'];
     ok(u, '意见书六段结构齐全', need.every((k) => op.includes(k)), need.filter((k) => !op.includes(k)).join('缺:') || '完整');
+    ok(u, '意见书已删除「检测结论仅供参考」灰条', !op.includes('检测结论仅供参考'), '仍含灰条文案');
     ok(u, '意见书含分级风险明细（（一）高危）', op.includes('（一）高危风险'));
     // 法条附件去重
     const refs = (op.match(/◆ /g) || []).length;
@@ -398,8 +399,8 @@ async function renderPage(pageKey) {
     // 空态：清空后是「未发现问题」版本
     await wipeAll();
     const opEmpty = window.buildOpinion([], { empTotal: 0, peopleCnt: 0, affected: 0 });
-    ok(u, '无风险时意见书为「未发现问题」版本且带仅供参考提示',
-      opEmpty.includes('未发现劳动用工风险事项') && opEmpty.includes('检测结论仅供参考'));
+    ok(u, '无风险时意见书为「未发现问题」版本且不带灰条',
+      opEmpty.includes('未发现劳动用工风险事项') && !opEmpty.includes('检测结论仅供参考'));
   }
 
   /* ================= 用户16 沈老板：hybrid 规则开关 ================= */

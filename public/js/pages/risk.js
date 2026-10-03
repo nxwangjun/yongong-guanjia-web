@@ -19,7 +19,6 @@ PAGES.risk = {
     }
     const items = (data.items || []).slice().sort((a, b) => sevRank(a.sev) - sevRank(b.sev) || b.count - a.count);
     const firstCount = items.filter((i) => sevRank(i.sev) === 0).length;
-    const people = items.reduce((s, i) => s + (i.people || []).length, 0);
     // 未设最低工资时低工资类规则静默不判，显眼提示而不是无声跳过
     const cfg = ((await API.settings().catch(() => ({}))) || {}).settings || {};
     const wageHint = !Number(cfg.minWage)
@@ -31,8 +30,6 @@ PAGES.risk = {
       <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${items.length}</b><span>需关注风险点</span></div>
         <div class="stat alert"><b>${firstCount}</b><span>建议优先处理</span></div>
-        <div class="stat"><b>${people}</b><span>涉及人次</span></div>
-        <div class="stat"><b>${items.filter((i) => i.source === '数据扫描').length}</b><span>由数据算出</span></div>
       </div>
       <div class="card">
         <div class="toolbar">

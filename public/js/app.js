@@ -83,7 +83,6 @@ const APP = (() => {
           <div class="steps" style="grid-template-columns:repeat(${steps.length},1fr)">
             ${steps.map((s, i) => `<div class="step"><span class="no ${s.cls}">${i + 1}</span>${s.text}</div>`).join('')}
           </div>
-          <p style="margin:0 0 6px;color:var(--muted);font-size:12.5px">检测结论仅供参考。</p>
           </div>`;
       }
 
@@ -240,7 +239,6 @@ const APP = (() => {
       }
     }
 
-    t += '检测结论仅供参考。\n';
     return t;
   }
   window.buildOpinion = buildOpinion;
