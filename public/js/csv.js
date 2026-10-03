@@ -8,6 +8,7 @@ window.CSV = (() => {
     ],
     contracts: [
       { k: 'employeeId', t: '员工ID' }, { k: 'type', t: '合同类型' },
+      { k: 'empType', t: '用工形式' },
       { k: 'months', t: '期限(月)' }, { k: 'probationMonths', t: '试用期(月)' },
       { k: 'signDate', t: '签订日期', d: 1 }, { k: 'endDate', t: '到期日期', d: 1 },
     ],
@@ -32,7 +33,7 @@ window.CSV = (() => {
   /* 各表 1 行示例数据（模板用，导入时自动剔除） */
   const SAMPLES = {
     employees: { name: '张三', empNo: 'YG001', dept: '生产部', entryDate: '2025-03-01', status: '在职' },
-    contracts: { employeeId: '张三', type: '固定期限', months: 36, probationMonths: 3, signDate: '2025-03-01', endDate: '2028-02-29' },
+    contracts: { employeeId: '张三', type: '固定期限', empType: '全日制', months: 36, probationMonths: 3, signDate: '2025-03-01', endDate: '2028-02-29' },
     attendances: { employeeId: '张三', month: '2026-09', overtimeHours: 10, hours: 176 },
     payrolls: { employeeId: '张三', month: '2026-09', amount: 5000, overtimePay: 500, probation: '', formalAmount: '' },
     socials: { employeeId: '张三', insured: '是', base: 5000 },
