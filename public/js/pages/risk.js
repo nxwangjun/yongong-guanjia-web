@@ -124,7 +124,7 @@ PAGES.riskrule = {
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
           停用后该条不参与扫描。共 ${rules.filter((r) => r.level === 'auto').length} 条由数据自动算出，
-          ${rules.filter((r) => r.level === 'ask').length} 条需台账确认或问卷作答。
+          ${rules.filter((r) => r.level !== 'auto').length} 条需台账确认或问卷作答${rules.filter((r) => r.level === 'hybrid').length ? `（含 ${rules.filter((r) => r.level === 'hybrid').length} 条混合方式，先由数据初筛再走确认）` : ''}。
         </p>
         <table class="tbl">
           <thead><tr><th style="width:60px">启用</th><th>风险点</th><th style="width:90px">分类</th><th style="width:80px">方式</th></tr></thead>

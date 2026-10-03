@@ -5,7 +5,7 @@ const APP = (() => {
     { name: '结论', items: [['home', '风险概览'], ['people', '员工风险画像'], ['risk', '用工风险清单']] },
     { name: '数据填入', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资报酬'], ['social', '社保信息'], ['cert', '证件资质'], ['dataio', '数据导入']] },
     { name: '风险确认', items: [['riskconfirm', '合规自查'], ['regionset', '判定阈值'], ['ai', 'AI 问答']] },
-    { name: '系统设置', items: [['riskrule', '规则配置'], ['setting', '系统设置']] },
+    { name: '系统信息', items: [['riskrule', '规则配置'], ['setting', '系统信息']] },
   ];
 
   /* ---------- 首页（风险概览） ---------- */

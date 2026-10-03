@@ -257,9 +257,9 @@ PAGES.regionset = {
   },
 };
 
-/* ============ 系统设置（只剩 AI 密钥配置） ============ */
+/* ============ 系统信息（AI 密钥配置 + 系统状态） ============ */
 PAGES.setting = {
-  title: '系统设置',
+  title: '系统信息',
   async render(c) {
     const h = await API.health().catch(() => ({}));
 
