@@ -459,8 +459,8 @@ async function renderPage(pageKey) {
     const u = 'U17韩HR(数据导入页)';
     await API.exportAll();
     const page = await renderPage('dataio');
-    ok(u, '数据导入页渲染（含导入/导出/模板）',
-      page._html.includes('导入') && page._html.includes('导出') && page._html.includes('模板'));
+    ok(u, '数据导入页渲染（含导入/导出/填写表）',
+      page._html.includes('导入') && page._html.includes('导出') && page._html.includes('填写'));
   }
 
   /* ================= 用户18 杨老板：离职员工不再判 auto 风险 ================= */
@@ -825,6 +825,31 @@ async function renderPage(pageKey) {
     await API.importAll(dump);
     const sc = await API.scan();
     ok(u, 'JSON 备份→清空→恢复 → 19 类风险还原', sc.items.length === 19, `实际 ${sc.items.length}`);
+  }
+
+  /* ================= 用户51 第三方律师：导出空白填写表 + 回填自查答案 ================= */
+  {
+    freshBrowser();
+    const u = 'U51第三方律师(导出填写表)';
+    // 1) 导出 CSV 是空白模板（带示例行），不含真实员工数据
+    const csvText = window.CSV.allToCsv(null, true);
+    ok(u, '导出 CSV 是六表合一模板（含 #employees 段头）', csvText.includes('#employees'));
+    ok(u, '导出 CSV 带示例行（含「张三」示例）', csvText.includes('张三'));
+    // 2) 导出 JSON 是合规自查空白答案表
+    const qd = await API.quiz();
+    const blank = {};
+    (qd.categories || []).forEach((cat) => (cat.questions || []).forEach((q) => { blank[q.id] = ''; }));
+    const blankJson = { _type: 'survey-blank', questions: blank };
+    ok(u, '导出 JSON 含 48 题空白答案', Object.keys(blankJson.questions).length === 48, `实际 ${Object.keys(blankJson.questions).length} 题`);
+    // 3) 回填自查答案（模拟客户填好 3 题）
+    const filled = { _type: 'survey-blank', questions: { 'R-RECRUIT-01': 'no', 'R-RECRUIT-02': 'yes', 'R-INTERVIEW-01': 'unsure' } };
+    await API.confirmAnswers(filled.questions);
+    const db = await API.exportAll();
+    ok(u, '回填后 confirms 含 3 条答案', Object.keys(db.confirms).length === 3, `实际 ${Object.keys(db.confirms).length} 条`);
+    ok(u, 'R-RECRUIT-01 答案为 no', db.confirms['R-RECRUIT-01'] && db.confirms['R-RECRUIT-01'].answer === 'no');
+    // 4) 旧版整体备份仍能识别（兼容）
+    const oldDump = await API.exportAll();
+    ok(u, '旧版备份含 employees 数组', Array.isArray(oldDump.employees) && oldDump.employees.length > 0);
   }
 
   /* ================= 用户43 大厂HR：11 人同命中 → 意见书截断提示 ================= */

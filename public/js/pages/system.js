@@ -7,30 +7,28 @@ PAGES.dataio = {
   async render(c) {
     c.innerHTML = `
       <div class="card">
-        <h2>导出</h2>
+        <h2>导出（发给客户填写）</h2>
         <p style="color:var(--muted);font-size:13px">
-          所有数据只存在本浏览器里。建议定期导出备份，换电脑或清浏览器数据前导一次。
+          导出的是<b>空白填写表</b>（含示例行），不是备份。发给客户填好后收回来，在下方导入即可出结论。
         </p>
         <div class="toolbar">
-          <button class="btn primary" id="expCsv">导出 CSV（六表合一，Excel / WPS 可打开）</button>
-          <button class="btn" id="expJson">导出 JSON 备份（含台账/问卷答案）</button>
+          <button class="btn primary" id="expCsv">导出填写员工数据（含填写示例）</button>
+          <button class="btn" id="expJson">导出合规自查数据（填写后导入）</button>
         </div>
       </div>
 
       <div class="card">
-        <h2>导入</h2>
+        <h2>导入（收客户填好的表）</h2>
         <p style="color:var(--muted);font-size:13px">
-          <b>.csv</b>：一个文件装六张表（员工/劳动合同/考勤/薪资/社保/证照，分段存放）。
-          先「下载模板」——模板里每张表都给了 1 行示例，照着格式把自己的数据填进去（示例行可不删，导入时自动跳过）。<br/>
-          <b>.json</b>：整体恢复备份（覆盖当前全部数据，导入前会先让你确认）。
+          <b>.csv</b>：六张员工数据表（员工/劳动合同/考勤/薪资/社保/证照，分段存放），客户按示例行格式填好即可。<br/>
+          <b>.json</b>：合规自查答案表（48 题 yes/no/unsure/na），只回填合规自查答案，不覆盖员工数据。
         </p>
         <div class="toolbar" style="margin-top:6px">
           <input type="file" id="file" accept=".csv,.json" />
-          <button class="btn" id="tplBtn">下载模板（含填写示例）</button>
           <button class="btn primary" id="impBtn">确认导入</button>
         </div>
-        <p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">
-          CSV 导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。导入前会先弹预览，确认无误才入库。
+        <p style="color:#b45309;font-size:12.5px;margin:8px 0 0">
+          ⚠️ CSV 导入为<b>追加</b>模式：新记录直接加入，<b>不影响已有数据</b>。如果是给新客户做检测，请先清空本浏览器里的旧数据（或换浏览器/换电脑），否则新旧两家公司的员工会混在一起，扫出来的风险会张冠李戴。
         </p>
       </div>`;
 
@@ -44,27 +42,27 @@ PAGES.dataio = {
     };
 
     c.querySelector('#expJson').onclick = async () => {
-      const data = await API.exportAll();
-      download(
-        new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
-        '小哲用工风险检测_备份_' + new Date().toISOString().slice(0, 10) + '.json'
+      // 合规自查空白答案表：只发题目，不发现存答案，客户填好 yes/no/unsure/na 后回导
+      const qd = await API.quiz();
+      const blank = {};
+      (qd.categories || []).forEach((cat) =>
+        (cat.questions || []).forEach((q) => { blank[q.id] = ''; })
       );
-      UI.toast('已导出 JSON 备份');
+      download(
+        new Blob([JSON.stringify({ _type: 'survey-blank', questions: blank }, null, 2)], { type: 'application/json' }),
+        '小哲用工风险检测_合规自查填写表_' + new Date().toISOString().slice(0, 10) + '.json'
+      );
+      UI.toast('已导出合规自查填写表（48 题空白）');
     };
 
     c.querySelector('#expCsv').onclick = async () => {
-      const dataByCol = {};
-      let total = 0;
-      for (const col of window.CSV.COL_ORDER) {
-        dataByCol[col] = await API.list(col);
-        total += dataByCol[col].length;
-      }
-      const text = window.CSV.allToCsv(dataByCol, false);
+      // 员工数据空白填写表：只发模板（带示例行），不发客户真实数据
+      const text = window.CSV.allToCsv(null, true);
       download(
         new Blob([text], { type: 'text/csv;charset=utf-8' }),
-        '小哲用工风险检测_全部数据_' + new Date().toISOString().slice(0, 10) + '.csv'
+        '小哲用工风险检测_员工数据填写表_' + new Date().toISOString().slice(0, 10) + '.csv'
       );
-      UI.toast('已导出六表合一 CSV，共 ' + total + ' 条');
+      UI.toast('已导出员工数据填写表（六表带示例行）');
     };
 
     // ---- 导入 ----
@@ -76,23 +74,33 @@ PAGES.dataio = {
       UI.toast('已选择：' + f.name);
     };
 
-    // 下载合并模板（六表各带 1 行示例）
-    c.querySelector('#tplBtn').onclick = () => {
-      const text = window.CSV.allToCsv(null, true);
-      download(
-        new Blob([text], { type: 'text/csv;charset=utf-8' }),
-        '模板_用工数据六表合一.csv'
-      );
-      UI.toast('模板已下载：每张表给了 1 行示例，照着填即可，示例行可不删');
-    };
-
     c.querySelector('#impBtn').onclick = async () => {
       if (!picked) return UI.toast('请先选择文件');
       const name = picked.name.toLowerCase();
       try {
         if (name.endsWith('.json')) {
           const obj = JSON.parse(await picked.text());
-          UI.confirmBox('JSON 恢复会覆盖当前全部数据，确定继续？（建议先导出现有备份）', async () => {
+          // 合规自查答案表：只回填 answers，不动员工数据
+          if (obj && obj._type === 'survey-blank' && obj.questions) {
+            const answers = {};
+            let cnt = 0;
+            Object.keys(obj.questions).forEach((rid) => {
+              const v = String(obj.questions[rid] || '').trim();
+              if (v === 'yes' || v === 'no' || v === 'unsure' || v === 'na') {
+                answers[rid] = v;
+                cnt++;
+              }
+            });
+            if (!cnt) return UI.toast('JSON 里没有有效答案（请填 yes / no / unsure / na）');
+            UI.confirmBox(`将从「${picked.name}」回填 ${cnt} 条合规自查答案（只写答案，不动员工数据），确定继续？`, async () => {
+              await API.confirmAnswers(answers);
+              UI.toast(`已回填 ${cnt} 条合规自查答案`);
+              setTimeout(() => location.reload(), 800);
+            });
+            return;
+          }
+          // 旧版整体备份：兼容，但提示会覆盖
+          UI.confirmBox('这是旧版整体备份文件，会覆盖当前全部数据（员工/合同/考勤/薪资/社保/证照/答案），确定继续？', async () => {
             await API.importAll(obj);
             UI.toast('已恢复备份');
             setTimeout(() => location.reload(), 800);

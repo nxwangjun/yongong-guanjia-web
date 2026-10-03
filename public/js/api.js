@@ -181,6 +181,23 @@ const API = (() => {
     return { ok: true };
   }
 
+  /* 合规自查台账确认（riskconfirm 页用）：answer 取 yes/no/unsure/na */
+  async function confirmAnswers(answers) {
+    const d = loadDb();
+    if (Array.isArray(d.confirms)) {
+      const m = {};
+      d.confirms.forEach((x) => { if (x && x.ruleId) m[x.ruleId] = x; });
+      d.confirms = m;
+    }
+    d.confirms = d.confirms || {};
+    Object.keys(answers || {}).forEach((rid) => {
+      d.confirms[rid] = { ruleId: rid, answer: answers[rid], note: '', by: '导入', at: Date.now() };
+    });
+    log(d, '导入合规自查答案', `${Object.keys(answers || {}).length} 条`);
+    saveDb(d);
+    return { ok: true };
+  }
+
   /* ---------- 设置 ---------- */
   async function settings() {
     return { settings: loadDb().settings || {} };
@@ -261,7 +278,7 @@ const API = (() => {
     list, add, update, remove,
     health: () => req('GET', '/api/health'),
     stats, scan, riskByEmployee,
-    quiz, rules, setRule, confirm, survey,
+    quiz, rules, setRule, confirm, survey, confirmAnswers,
     settings, saveSettings,
     exportAll, importAll, reset, clearAll,
 
