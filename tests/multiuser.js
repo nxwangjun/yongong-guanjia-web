@@ -388,7 +388,7 @@ async function renderPage(pageKey) {
     await API.exportAll(); // 演示数据 18 类
     const sc = await API.scan();
     const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: sc.items.reduce((s, i) => s + (i.people || []).length, 0), affected: 10 });
-    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文'];
+    const need = ['劳动用工风险分析意见书', '一、评估概况', '评级说明', '二、企业用工风险情况', '三、后续整改指引（按优先级）', '附件：涉及法律依据全文'];
     ok(u, '意见书六段结构齐全', need.every((k) => op.includes(k)), need.filter((k) => !op.includes(k)).join('缺:') || '完整');
     ok(u, '意见书已删除「检测结论仅供参考」灰条', !op.includes('检测结论仅供参考'), '仍含灰条文案');
     ok(u, '意见书含分级风险明细（（一）高危）', op.includes('（一）高危风险'));
@@ -970,7 +970,7 @@ async function renderPage(pageKey) {
     ok(u, '清单人次与画像风险项数一致（auto 类口径）', peRiskSum === scanPeople,
       `清单人次 ${scanPeople} / 画像项 ${peRiskSum}（含台账/问卷 ${askCnt} 类无人次）`);
     const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: scanPeople, affected: pe.employees.filter((e) => e.riskCount > 0).length });
-    ok(u, '终态意见书结构完整', ['一、检测概况', '二、风险明细', '三、整改建议', '附件：涉及法律依据全文'].every((k) => op.includes(k)));
+    ok(u, '终态意见书结构完整', ['一、评估概况', '二、企业用工风险情况', '三、后续整改指引', '附件：涉及法律依据全文'].every((k) => op.includes(k)));
     // ② 清空→重载→结论可复现（幂等）
     await wipeAll();
     await API.reset();
