@@ -23,7 +23,7 @@ PAGES.people = {
 
     c.innerHTML = `
       <div class="notice">${DISCLAIMER2}</div>
-      <div class="stat-grid">
+      <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${emps.length}</b><span>员工总数</span></div>
         <div class="stat alert"><b>${affected}</b><span>存在风险的员工</span></div>
         <div class="stat alert"><b>${highRisk}</b><span>高危问题数</span></div>

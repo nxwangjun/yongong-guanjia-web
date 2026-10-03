@@ -59,10 +59,10 @@ PAGES.attend = {
 };
 
 PAGES.payroll = {
-  title: '薪资',
+  title: '薪资报酬',
   render(c) {
     return UI.crudPage(c, {
-      title: '薪资与加班费',
+      title: '薪资报酬',
       col: 'payrolls',
       desc: '低于当地最低工资、试用期工资不足转正 80%、有加班无加班费都会触发风险。',
       fields: [
@@ -78,10 +78,10 @@ PAGES.payroll = {
 };
 
 PAGES.social = {
-  title: '社保',
+  title: '社保信息',
   render(c) {
     return UI.crudPage(c, {
-      title: '社保缴纳',
+      title: '社保信息',
       col: 'socials',
       desc: '在职但无参保记录，或未在用工之日起 30 日内办理登记的，会触发风险。',
       fields: [

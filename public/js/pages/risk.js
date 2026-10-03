@@ -26,7 +26,7 @@ PAGES.risk = {
 
     c.innerHTML = `
       <div class="notice">${DISCLAIMER}</div>
-      <div class="stat-grid">
+      <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${items.length}</b><span>需关注风险点</span></div>
         <div class="stat alert"><b>${firstCount}</b><span>建议优先处理</span></div>
         <div class="stat"><b>${people}</b><span>涉及人次</span></div>
@@ -176,7 +176,7 @@ PAGES.riskconfirm = {
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
           系统算不出的项目，在这里逐条勾选。
-          勾选完点页面底部「提交自查结果」，答「没做到」的会进入风险清单。
+          勾选完点页面底部「提交自查结果」，会自动跳到风险清单并重算出最新结论，答「没做到」的会进入风险清单。
         </p>
         <div id="list"></div>
         <div class="toolbar" style="margin-top:14px">
