@@ -64,6 +64,12 @@ const APP = (() => {
             <div class="stat"><b>${midItems.length}</b><span>中危</span></div>
             <div class="stat"><b>${lowItems.length}</b><span>低危</span></div>
           </div>
+          <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:12.5px;color:var(--muted)">
+            <b style="color:var(--text)">分级说明（为什么这么分）：</b><br/>
+            <b style="color:#dc2626">高危</b>＝直接违反法律强制性规定，单人/单次赔付或处罚金额显著（如二倍工资、赔偿金、补缴社保并滞纳金），事后补救难以完全消除责任，<b>应当立即处理</b>；<br/>
+            <b style="color:#d97706">中危</b>＝虽违反强制性规定，但金额有限，可通过补发、补签、补缴、补休等方式基本挽回，<b>建议限期整改</b>；<br/>
+            <b style="color:#6b7280">低危</b>＝以留痕、公示、文本规范为主的合规要求，通常无直接金钱给付责任，<b>纳入日常管理规范即可</b>。
+          </div>
           <p style="margin:0 0 10px">
             本次共扫出 <b>${items.length}</b> 类用工风险，其中 <b style="color:#dc2626">${highItems.length} 类建议优先处理</b>，
             涉及 <b>${peopleCnt}</b> 人次（${affected} 名员工身上有至少一类风险）。
@@ -94,11 +100,37 @@ const APP = (() => {
           <h2>风险概要</h2>
           ${summaryHtml}
         </div>
+        <div class="card">
+          <h2>劳动用工分析意见书</h2>
+          <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
+            根据当前扫描结果自动生成的分析意见书全文（含评估概况、分级风险明细、整改建议、涉及法条全文），
+            可一键复制到 Word 或微信发送。${items.length ? '' : '当前未扫出风险，生成的是「未发现问题」版本。'}
+          </p>
+          <div class="toolbar" style="margin:0">
+            <button class="btn primary" id="btnOpinion">查看意见书全文</button>
+            <button class="btn" id="btnCopyOpinion">一键复制意见书</button>
+          </div>
+        </div>
         <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <span style="font-size:13.5px">📊 检测覆盖：<b>${autoCnt}</b> 条已由数据自动测算，<b>${askCnt}</b> 条需合规自查（已确认 <b>${confCnt}</b> / ${askCnt}）</span>
           <div class="spacer"></div>
           <button class="btn small" onclick="location.hash='#/riskconfirm'">去合规自查</button>
         </div>`;
+
+      /* ---- 意见书：查看全文 / 一键复制 ---- */
+      const empTotal = (await API.list('employees').catch(() => [])).filter((e) => e.status !== 'left').length;
+      const opText = buildOpinion(items, { empTotal, peopleCnt, affected });
+      c.querySelector('#btnOpinion').onclick = () => {
+        UI.modal(
+          '劳动用工分析意见书（全文）',
+          `<textarea id="opText" readonly style="width:100%;height:52vh;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.7;resize:vertical">${UI.esc(opText)}</textarea>`,
+          [
+            { text: '一键复制', cls: 'primary', onClick: (box) => copyText(opText, box.querySelector('#opText')) },
+            { text: '关闭', onClick: () => UI.closeModal() },
+          ]
+        );
+      };
+      c.querySelector('#btnCopyOpinion').onclick = () => copyText(opText, null);
 
       /* ---- 演示数据横幅按钮 ---- */
       c.querySelector('#btnWipe').onclick = () =>
@@ -121,11 +153,116 @@ const APP = (() => {
     },
   };
 
+  /* ---------- 分析意见书生成（格式参照小毅劳资风险自检器法律分析意见书） ---------- */
+  const SEV_META = [
+    { key: '高', num: '（一）', note: '直接违反法律强制性规定，单人/单次赔付或处罚金额显著（如二倍工资、赔偿金、补缴社保并滞纳金），事后补救难以完全消除责任，应当立即处理。' },
+    { key: '中', num: '（二）', note: '虽违反强制性规定，但金额有限，可通过补发、补签、补缴、补休等方式基本挽回，建议限期整改。' },
+    { key: '低', num: '（三）', note: '以留痕、公示、文本规范为主的合规要求，通常无直接金钱给付责任，建议纳入日常管理规范。' },
+  ];
+
+  function buildOpinion(items, meta) {
+    meta = meta || {};
+    const d = new Date();
+    const p = (x) => String(x).padStart(2, '0');
+    const dateStr = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    const groups = SEV_META.map((m) => ({ ...m, items: items.filter((i) => i.sev === m.key) })).filter((g) => g.items.length);
+    const high = items.filter((i) => i.sev === '高').length;
+    const mid = items.filter((i) => i.sev === '中').length;
+    const low = items.filter((i) => i.sev === '低').length;
+
+    let t = '劳动用工风险分析意见书\n\n';
+    t += '出具方：小哲用工风险检测系统（自助检测工具）\n';
+    t += '生成日期：' + dateStr + '\n';
+    if (meta.empTotal) t += '员工规模：' + meta.empTotal + ' 人（在职）\n';
+    t += '\n一、检测概况\n';
+    if (!items.length) {
+      t += '本次检测未发现劳动用工风险事项。\n';
+    } else {
+      t += `本次检测共发现 ${items.length} 类用工风险（高危 ${high} 类、中危 ${mid} 类、低危 ${low} 类），涉及 ${meta.peopleCnt} 人次（${meta.affected} 名员工存在至少一类风险）。\n`;
+    }
+    t += '分级说明：高危——直接违反法律强制性规定，赔付或处罚金额显著，事后补救难以完全消除责任，应当立即处理；中危——虽违反强制性规定，但金额有限，可通过补发、补签、补缴、补休等方式基本挽回，建议限期整改；低危——以留痕、公示、文本规范为主的合规要求，通常无直接金钱给付责任，建议纳入日常管理规范。\n\n';
+
+    if (items.length) {
+      t += '二、风险明细\n';
+      groups.forEach((g) => {
+        t += `${g.num}${g.key}危风险（${g.items.length} 类）\n性质：${g.note}\n`;
+        g.items.forEach((it, i) => {
+          t += `${i + 1}. 【${it.catLabel || it.cat || '其他'}】${it.risk}`;
+          if (it.source === '台账/问卷') t += it.answer === 'unsure' ? '（自查结论：待核实）' : '（自查结论：未做到）';
+          t += '\n';
+          (it.people || []).slice(0, 10).forEach((pp) => {
+            t += `   涉及人员：${pp.name}（${pp.dept || '未填部门'}）——${pp.detail}\n`;
+          });
+          if ((it.people || []).length > 10) t += `   涉及人员：共 ${it.people.length} 人，上列前 10 人，完整明细见系统「用工风险清单」。\n`;
+          if (it.consequence) t += `   可能的后果：${it.consequence}\n`;
+          if ((it.remedy || []).length) t += `   整改建议：${it.remedy.map((r, j) => `${j + 1}) ${r}`).join('；')}\n`;
+          if ((it.law || []).length) t += `   法律依据：${it.law.map((l) => l.ref).join('；')}（全文见附件）\n`;
+        });
+        t += '\n';
+      });
+
+      t += '三、整改建议（按优先级）\n';
+      if (high) t += `第一步：立即处理 ${high} 类高危事项，固定证据、逐项整改，避免进入仲裁程序后陷入被动。\n`;
+      if (mid) t += `第二步：限期补齐 ${mid} 类中危事项的手续与台账（补签、补发、补缴、补休）。\n`;
+      if (low) t += `第三步：将 ${low} 类低危事项纳入日常管理规范，形成留痕习惯。\n`;
+      t += '\n';
+
+      const seen = {};
+      const laws = [];
+      items.forEach((it) =>
+        (it.law || []).forEach((l) => {
+          if (l.ref && !seen[l.ref]) {
+            seen[l.ref] = 1;
+            laws.push(l);
+          }
+        })
+      );
+      if (laws.length) {
+        t += '附件：涉及法律依据全文\n';
+        laws.forEach((l) => {
+          t += `◆ ${l.ref}\n　${(l.text || '').replace(/\n/g, '\n　')}\n\n`;
+        });
+      }
+    }
+
+    t += '⚠️ 本报告由自助诊断工具生成，仅供初步自查参考，不构成正式法律意见，也不替代律师当面咨询与阅卷。\n';
+    return t;
+  }
+  window.buildOpinion = buildOpinion;
+
+  /* ---------- 复制到剪贴板（Clipboard API + textarea 兜底） ---------- */
+  function copyText(text, ta) {
+    const done = () => UI.toast('已复制，可直接粘贴到 Word / 微信');
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => legacyCopy(text, ta, done));
+    } else {
+      legacyCopy(text, ta, done);
+    }
+  }
+  function legacyCopy(text, ta, done) {
+    let el = ta;
+    let temp = false;
+    if (!el) {
+      el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      temp = true;
+    }
+    el.select();
+    try {
+      document.execCommand('copy');
+      done();
+    } catch (e) {
+      UI.toast('复制失败，请手动全选复制');
+    }
+    if (temp) document.body.removeChild(el);
+  }
+
   /* ---------- 侧边栏 ---------- */
   async function renderNav() {
     let s = {};
     try {
-      s = await API.settings();
+      s = (await API.settings()).settings || {};
     } catch (e) {}
     const hidden = s.hiddenModules || [];
     const order = s.moduleOrder || [];

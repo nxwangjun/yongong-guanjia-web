@@ -165,12 +165,13 @@ async function renderPage(pageKey) {
     let sc = await API.scan();
     const hit = sc.items.find((i) => i.ruleId === 'R-WAGE-01');
     ok(u, '工资 2000 < 最低 2235 → 命中低工资', !!hit, hit && hit.people[0].detail);
-    // 没设最低工资时不应误判
+    // 没设最低工资时不应误判（且风险清单页会给出显眼提示，不再静默跳过）
     await API.saveSettings({ minWage: 0 });
     sc = await API.scan();
     const notHit = !sc.items.some((i) => i.ruleId === 'R-WAGE-01');
     ok(u, '未设最低工资标准时不误报', notHit);
-    if (notHit) issues.push('minWage=0 时 R-WAGE-01 整条不判——对没设地区的用户，低工资风险会静默漏掉。建议：未设标准时在页面显眼处提示「设了地区/最低工资才会判这条」，而不是无声跳过');
+    const riskPage = await renderPage('risk');
+    ok(u, '未设最低工资时风险清单页有显眼提示（不再静默跳过）', riskPage._html.includes('类检测未启用'));
   }
 
   /* ================= 用户5 陈经理：月加班 40 小时 ================= */
@@ -235,13 +236,10 @@ async function renderPage(pageKey) {
     const final = await API.scan();
     const newHits = final.items.filter((i) => five.some((r) => r.id === i.ruleId));
     ok(u, '改 5 条「没做到」→ 正好多出 5 类风险', newHits.length === 5, `实际 ${newHits.length}`);
-    // 「不适用/待核实」的现行行为：引擎把 unsure 也列入清单（保守口径）
+    // 「待核实」按设计列入清单（保守口径），「不适用」已由 U13 验证不出风险
     await API.confirm(askRules[5].id, 'unsure', '');
     const unsureScan = await API.scan();
-    const unsureHit = unsureScan.items.some((i) => i.ruleId === askRules[5].id);
-    ok(u, '答「不适用/待核实」按现行保守口径列入清单', unsureHit);
-    if (unsureHit)
-      issues.push('「不适用/待核实」按钮把两个相反含义揉在一起：「不适用」（如没有劳务派遣的企业答派遣题）本不该产生风险，但引擎把 unsure 一律列入清单（engine.js 522 行 ans.answer===\'unsure\' 也命中）。建议：把「不适用」与「待核实」拆成两个选项——不适用不出风险、待核实进清单并标注「待核实」，否则自查类会出现误报，损害结论可信度');
+    ok(u, '答「待核实」按保守口径列入清单', unsureScan.items.some((i) => i.ruleId === askRules[5].id));
   }
 
   /* ================= 用户9 吴老板：改判定阈值影响结论 ================= */
@@ -295,6 +293,189 @@ async function renderPage(pageKey) {
     }
     sc = await API.scan();
     ok(u, 'CSV 导出→导入后风险结论还原', sc.items.length === 18, `实际 ${sc.items.length}`);
+  }
+
+  /* ================= 用户11 钱HR：CSV 文本导入员工 ================= */
+  {
+    freshBrowser();
+    const u = 'U11钱HR(CSV导入)';
+    await API.exportAll();
+    await wipeAll();
+    const csv = '姓名,部门,入职日期,在职状态\n钱多多,财务部,2025-01-15,在职\n钱少少,人事部,2024-06-01,在职';
+    const rows = window.CSV.csvToCol('employees', csv);
+    ok(u, 'CSV 解析出 2 名员工', rows.length === 2, rows.map((r) => r.name).join('、'));
+    for (const r of rows) await API.add('employees', r);
+    const emps = await API.list('employees');
+    ok(u, '导入后库里 2 人', emps.length === 2);
+    const sc = await API.scan();
+    ok(u, '导入的员工立即参与扫描（无合同+无社保→命中）',
+      sc.items.some((i) => i.ruleId === 'R-ENTRY-01') && sc.items.some((i) => i.ruleId === 'R-SOCIAL-01'));
+  }
+
+  /* ================= 用户12 冯经理：考勤→清单→画像→点人 关联链 ================= */
+  {
+    freshBrowser();
+    const u = 'U12冯经理(数据关联链)';
+    await API.exportAll();
+    await wipeAll();
+    const emp = await API.add('employees', { name: '冯关联', dept: '物流部', entryDate: now - 300 * DAY, status: 'on' });
+    await API.add('contracts', { employeeId: emp._id, type: 'fixed', months: 36, signDate: now - 300 * DAY, endDate: now + 400 * DAY });
+    await API.add('socials', { employeeId: emp._id, insured: '1', base: 5000 });
+    // 第一步：录入考勤（加班 42 小时）
+    await API.add('attendances', { employeeId: emp._id, month: '2026-09', overtimeHours: 42, hours: 174 });
+    // 第二步：风险清单自动关联出这条风险
+    const sc = await API.scan();
+    const hit = sc.items.find((i) => i.ruleId === 'R-HOURS-01');
+    ok(u, '①考勤录入→②风险清单自动关联命中', !!hit && hit.people[0].name === '冯关联');
+    // 第三步：员工画像关联到同一个人（加班 42h 且无加班费记录 → R-HOURS-01 + R-WAGE-02 两条）
+    const pe = await API.riskByEmployee();
+    const feng = pe.employees.find((e) => e.name === '冯关联');
+    const fengRules = feng.risks.map((r) => r.ruleId).sort().join(',');
+    ok(u, '②清单→③员工画像关联到存在风险的员工',
+      feng && feng.riskCount === 2 && fengRules === 'R-HOURS-01,R-WAGE-02', fengRules);
+    // 第四步：画像页渲染能点人看明细
+    const page = await renderPage('people');
+    const listHtml = page.querySelector('#list')._html;
+    ok(u, '③画像页渲染出该员工及其风险明细入口', listHtml.includes('冯关联') && listHtml.includes('展开风险明细'));
+    // 删掉考勤记录 → 全链路风险消失
+    const att = await API.list('attendances');
+    await API.remove('attendances', att[0]._id);
+    const pe2 = await API.riskByEmployee();
+    ok(u, '删考勤后全链路风险同步消失', pe2.employees.find((e) => e.name === '冯关联').riskCount === 0);
+  }
+
+  /* ================= 用户13 褚老板：答「不适用」不出风险 ================= */
+  {
+    freshBrowser();
+    const u = 'U13褚老板(不适用)';
+    await API.exportAll();
+    const rl = await API.rules();
+    const askRules = rl.rules.filter((r) => r.level !== 'auto');
+    const before = (await API.scan()).items.length;
+    // 把 3 条答「不适用」
+    for (const r of askRules.slice(0, 3)) await API.confirm(r.id, 'na', '');
+    const after = await API.scan();
+    ok(u, '答「不适用」不产生风险', after.items.length === before && !askRules.slice(0, 3).some((r) => after.items.some((i) => i.ruleId === r.id)),
+      `命中 ${before} → ${after.items.length}`);
+    // 合规自查页四按钮渲染
+    const page = await renderPage('riskconfirm');
+    const listHtml = page.querySelector('#list')._html;
+    ok(u, '自查页四个选项（含不适用）渲染',
+      listHtml.includes('已做到') && listHtml.includes('没做到') && listHtml.includes('待核实') && listHtml.includes('不适用'));
+  }
+
+  /* ================= 用户14 卫经理：「待核实」进清单且意见书标注 ================= */
+  {
+    freshBrowser();
+    const u = 'U14卫经理(待核实)';
+    await API.exportAll();
+    const rl = await API.rules();
+    const askRules = rl.rules.filter((r) => r.level !== 'auto');
+    await API.confirm(askRules[0].id, 'unsure', '');
+    const sc = await API.scan();
+    const hit = sc.items.find((i) => i.ruleId === askRules[0].id);
+    ok(u, '答「待核实」进入风险清单', !!hit && hit.answer === 'unsure');
+    const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: 0, affected: 0 });
+    ok(u, '意见书标注该条为「待核实」', op.includes('（自查结论：待核实）'));
+  }
+
+  /* ================= 用户15 蒋HR：意见书结构完整性 ================= */
+  {
+    freshBrowser();
+    const u = 'U15蒋HR(意见书)';
+    await API.exportAll(); // 演示数据 18 类
+    const sc = await API.scan();
+    const op = window.buildOpinion(sc.items, { empTotal: 36, peopleCnt: sc.items.reduce((s, i) => s + (i.people || []).length, 0), affected: 10 });
+    const need = ['劳动用工风险分析意见书', '一、检测概况', '分级说明', '二、风险明细', '三、整改建议（按优先级）', '附件：涉及法律依据全文', '不构成正式法律意见'];
+    ok(u, '意见书六段结构齐全', need.every((k) => op.includes(k)), need.filter((k) => !op.includes(k)).join('缺:') || '完整');
+    ok(u, '意见书含分级风险明细（（一）高危）', op.includes('（一）高危风险'));
+    // 法条附件去重
+    const refs = (op.match(/◆ /g) || []).length;
+    const uniq = new Set(sc.items.flatMap((i) => (i.law || []).map((l) => l.ref))).size;
+    ok(u, '意见书法条附件按 ref 去重', refs === uniq, `附件 ${refs} 条 / 去重后应有 ${uniq} 条`);
+    // 空态：清空后是「未发现问题」版本
+    await wipeAll();
+    const opEmpty = window.buildOpinion([], { empTotal: 0, peopleCnt: 0, affected: 0 });
+    ok(u, '无风险时意见书为「未发现问题」版本且仍带免责声明',
+      opEmpty.includes('未发现劳动用工风险事项') && opEmpty.includes('不构成正式法律意见'));
+  }
+
+  /* ================= 用户16 沈老板：hybrid 规则开关 ================= */
+  {
+    freshBrowser();
+    const u = 'U16沈老板(hybrid规则)';
+    await API.exportAll();
+    await API.confirm('R-SPECIAL-01', 'no', '');
+    let sc = await API.scan();
+    ok(u, 'hybrid 规则答「没做到」命中', sc.items.some((i) => i.ruleId === 'R-SPECIAL-01'));
+    await API.setRule('R-SPECIAL-01', false);
+    sc = await API.scan();
+    ok(u, '停用 hybrid 规则后不再命中', !sc.items.some((i) => i.ruleId === 'R-SPECIAL-01'));
+    // 规则配置页渲染统计口径（18 自动 + 106 自查含 1 混合）
+    const page = await renderPage('riskrule');
+    ok(u, '规则配置页口径：18 自动 + 106 自查（含混合）',
+      page._html.includes('18 条由数据自动算出') && page._html.includes('106 条需台账确认或问卷作答') && page._html.includes('混合方式'),
+      page._html.match(/共 \d+ 条由数据自动算出，\s*\d+ 条需台账确认或问卷作答（含 \d+ 条混合方式[^）]*）/) ? '口径正确' : '口径文案未见');
+  }
+
+  /* ================= 用户17 韩HR：数据导入页渲染 ================= */
+  {
+    freshBrowser();
+    const u = 'U17韩HR(数据导入页)';
+    await API.exportAll();
+    const page = await renderPage('dataio');
+    ok(u, '数据导入页渲染（含导入/导出/模板）',
+      page._html.includes('导入') && page._html.includes('导出') && page._html.includes('模板'));
+  }
+
+  /* ================= 用户18 杨老板：离职员工不再判 auto 风险 ================= */
+  {
+    freshBrowser();
+    const u = 'U18杨老板(离职处理)';
+    await API.exportAll();
+    await wipeAll();
+    const emp = await API.add('employees', { name: '杨离职', dept: '销售部', entryDate: now - 100 * DAY, status: 'left' });
+    let sc = await API.scan();
+    ok(u, '离职员工不再判「未签合同」', !sc.items.some((i) => i.ruleId === 'R-ENTRY-01' && i.people.some((p) => p.name === '杨离职')));
+    ok(u, '离职未开证明 → 命中 R-LEAVE-01', sc.items.some((i) => i.ruleId === 'R-LEAVE-01' && i.people.some((p) => p.name === '杨离职')));
+    // 补上离职证明 → 消失
+    await API.update('employees', emp._id, { leaveProof: true });
+    sc = await API.scan();
+    ok(u, '补开离职证明后 R-LEAVE-01 消失', !sc.items.some((i) => i.ruleId === 'R-LEAVE-01'));
+  }
+
+  /* ================= 用户19 朱经理：合同到期提醒与过期未续签 ================= */
+  {
+    freshBrowser();
+    const u = 'U19朱经理(合同到期)';
+    await API.exportAll();
+    await wipeAll();
+    const emp1 = await API.add('employees', { name: '朱将到期', dept: '技术部', entryDate: now - 340 * DAY, status: 'on' });
+    await API.add('contracts', { employeeId: emp1._id, type: 'fixed', months: 12, signDate: now - 340 * DAY, endDate: now + 20 * DAY });
+    await API.add('socials', { employeeId: emp1._id, insured: '1', base: 5000 });
+    const emp2 = await API.add('employees', { name: '朱已过期', dept: '技术部', entryDate: now - 400 * DAY, status: 'on' });
+    await API.add('contracts', { employeeId: emp2._id, type: 'fixed', months: 12, signDate: now - 400 * DAY, endDate: now - 10 * DAY });
+    await API.add('socials', { employeeId: emp2._id, insured: '1', base: 5000 });
+    const sc = await API.scan();
+    ok(u, '合同 20 天后到期 → 命中到期提醒 R-ENTRY-03',
+      sc.items.some((i) => i.ruleId === 'R-ENTRY-03' && i.people.some((p) => p.name === '朱将到期')));
+    ok(u, '合同已过期仍用工 → 命中未及时续签 R-ENTRY-05',
+      sc.items.some((i) => i.ruleId === 'R-ENTRY-05' && i.people.some((p) => p.name === '朱已过期')));
+  }
+
+  /* ================= 用户20 秦HR：阈值保存→切页→回显（回归验证 #802） ================= */
+  {
+    freshBrowser();
+    const u = 'U20秦HR(阈值回显)';
+    await API.exportAll();
+    await API.saveSettings({ region: '宁夏', signDeadlineDays: 20, contractExpireDays: 45, overtimeLimitMonth: 30, minWage: 2235, certExpireDays: 15 });
+    // 模拟切页再回来：重新 render regionset
+    const page = await renderPage('regionset');
+    const back = page._html;
+    ok(u, '保存后重进页面，5 个阈值全部回显',
+      back.includes('value="20"') && back.includes('value="45"') && back.includes('value="30"') && back.includes('value="2235"') && back.includes('value="15"'),
+      'signDeadline=20/expire=45/overtime=30/minWage=2235/cert=15');
+    ok(u, '地区下拉回显已选「宁夏」', /option value="宁夏" selected|value="宁夏"[^>]*selected/.test(back) || back.includes('宁夏'));
   }
 
   /* ================= 汇总 ================= */

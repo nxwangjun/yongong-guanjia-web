@@ -156,7 +156,8 @@ PAGES.regionset = {
       API.get('/api/regions').catch(() => ({ regions: [] })),
     ]);
     const regions = rg.regions || [];
-    const cur = s.region || '';
+    const cfg = s.settings || {};
+    const cur = cfg.region || '';
 
     // 已存地区在列表里没有（比如手填过的"宁夏银川"），补一个自定义项
     const inList = regions.some((r) => r.name === cur || cur.indexOf(r.name) === 0);
@@ -166,6 +167,7 @@ PAGES.regionset = {
         <h2>风险判定阈值</h2>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
           选好地区后，下方会自动带出当地的用工标准（最低工资等），带出的数字可以手工改。
+          <b style="color:#b45309">注意：最低工资填 0 或留空时，「低于最低工资」「试用期工资不达标」类检测不启用。</b>
         </p>
         <div class="form-grid">
           <label>所在地区
@@ -182,14 +184,14 @@ PAGES.regionset = {
               ${!inList && cur ? `<option value="${UI.esc(cur)}" selected>${UI.esc(cur)}（自定义）</option>` : ''}
             </select>
           </label>
-          <label>当地最低工资（元/月）<input id="minWage" type="number" value="${UI.esc(s.minWage ?? 0)}" /></label>
+          <label>当地最低工资（元/月）<input id="minWage" type="number" value="${UI.esc(cfg.minWage ?? 0)}" /></label>
           <label>最低工资档位
             <select id="tierSel"><option value="">（手动填写时不选）</option></select>
           </label>
-          <label>签约期限（天，超过即算未签合同）<input id="signDeadlineDays" type="number" value="${UI.esc(s.signDeadlineDays ?? 30)}" /></label>
-          <label>合同到期提醒（天）<input id="contractExpireDays" type="number" value="${UI.esc(s.contractExpireDays ?? 30)}" /></label>
-          <label>月加班上限（小时）<input id="overtimeLimitMonth" type="number" value="${UI.esc(s.overtimeLimitMonth ?? 36)}" /></label>
-          <label>证照到期提醒（天）<input id="certExpireDays" type="number" value="${UI.esc(s.certExpireDays ?? 30)}" /></label>
+          <label>签约期限（天，超过即算未签合同）<input id="signDeadlineDays" type="number" value="${UI.esc(cfg.signDeadlineDays ?? 30)}" /></label>
+          <label>合同到期提醒（天）<input id="contractExpireDays" type="number" value="${UI.esc(cfg.contractExpireDays ?? 30)}" /></label>
+          <label>月加班上限（小时）<input id="overtimeLimitMonth" type="number" value="${UI.esc(cfg.overtimeLimitMonth ?? 36)}" /></label>
+          <label>证照到期提醒（天）<input id="certExpireDays" type="number" value="${UI.esc(cfg.certExpireDays ?? 30)}" /></label>
         </div>
         <div id="regionInfo" style="margin-top:12px"></div>
         <div class="toolbar" style="margin-top:12px"><button class="btn primary" id="save">保存</button></div>

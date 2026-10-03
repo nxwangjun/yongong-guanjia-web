@@ -23,9 +23,15 @@ PAGES.risk = {
     const items = (data.items || []).slice().sort((a, b) => sevRank(a.sev) - sevRank(b.sev) || b.count - a.count);
     const firstCount = items.filter((i) => sevRank(i.sev) === 0).length;
     const people = items.reduce((s, i) => s + (i.people || []).length, 0);
+    // 未设最低工资时低工资类规则静默不判，显眼提示而不是无声跳过
+    const cfg = ((await API.settings().catch(() => ({}))) || {}).settings || {};
+    const wageHint = !Number(cfg.minWage)
+      ? `<div class="notice">⚠️ 还没有设置所在地区/最低工资，「低于最低工资」「试用期工资不达标」类检测未启用。<a href="#/regionset" style="color:inherit;text-decoration:underline">去「判定阈值」设置 →</a></div>`
+      : '';
 
     c.innerHTML = `
       <div class="notice">${DISCLAIMER}</div>
+      ${wageHint}
       <div class="stat-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:14px">
         <div class="stat"><b>${items.length}</b><span>需关注风险点</span></div>
         <div class="stat alert"><b>${firstCount}</b><span>建议优先处理</span></div>
@@ -176,7 +182,8 @@ PAGES.riskconfirm = {
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
           系统算不出的项目，在这里逐条勾选。
-          勾选完点页面底部「提交自查结果」，会自动跳到风险清单并重算出最新结论，答「没做到」的会进入风险清单。
+          勾选完点页面底部「提交自查结果」，会自动跳到风险清单并重算出最新结论：
+          答「没做到」或「待核实」的会进入风险清单，答「不适用」的不产生风险。
         </p>
         <div id="list"></div>
         <div class="toolbar" style="margin-top:14px">
@@ -203,7 +210,8 @@ PAGES.riskconfirm = {
             <div class="opts">
               <button class="opt ${a && a.answer === 'yes' ? 'on-yes' : ''}" data-ans="yes">已做到</button>
               <button class="opt ${a && a.answer === 'no' ? 'on-no' : ''}" data-ans="no">没做到</button>
-              <button class="opt ${a && a.answer === 'unsure' ? 'on-unsure' : ''}" data-ans="unsure">不适用/待核实</button>
+              <button class="opt ${a && a.answer === 'unsure' ? 'on-unsure' : ''}" data-ans="unsure">待核实</button>
+              <button class="opt ${a && a.answer === 'na' ? 'on-na' : ''}" data-ans="na">不适用</button>
               <button class="opt" data-law="${r.id}" title="查看本题法律依据">法律依据</button>
             </div>
           </div>`;
@@ -215,7 +223,7 @@ PAGES.riskconfirm = {
           const wrap = b.closest('.q');
           const rid = wrap.dataset.rule;
           const ans = b.dataset.ans;
-          wrap.querySelectorAll('.opt[data-ans]').forEach((o) => o.classList.remove('on-yes', 'on-no', 'on-unsure'));
+          wrap.querySelectorAll('.opt[data-ans]').forEach((o) => o.classList.remove('on-yes', 'on-no', 'on-unsure', 'on-na'));
           b.classList.add('on-' + ans);
           pend[rid] = { ruleId: rid, answer: ans };
           updPend();
@@ -244,8 +252,8 @@ PAGES.riskconfirm = {
         answered[rid] = { ruleId: rid, answer: pend[rid].answer };
         delete pend[rid];
       }
-      const noCnt = ids.filter((rid) => answered[rid].answer === 'no').length;
-      UI.toast(noCnt ? `已提交，${noCnt} 条「没做到」已进入风险清单` : '已提交，本次没有新增风险');
+      const enterCnt = ids.filter((rid) => answered[rid].answer === 'no' || answered[rid].answer === 'unsure').length;
+      UI.toast(enterCnt ? `已提交，${enterCnt} 条「没做到/待核实」已进入风险清单` : '已提交，本次没有新增风险');
       location.hash = '#/risk';
     };
     c.querySelector('#kw').oninput = (e) => draw(e.target.value.trim());
