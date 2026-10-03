@@ -164,6 +164,16 @@ const ok = (name, cond, extra) => {
   const back = window.CSV.csvToCol('employees', csvText);
   ok('CSV 导出导入闭环', back.length === 3 && back[0].name, `回读 ${back.length} 条`);
 
+  // 六表合并 CSV：模板带示例行，导入时示例行被自动剔除
+  const tplAll = window.CSV.allToCsv(null, true);
+  const tplParsed = window.CSV.csvToAll(tplAll);
+  ok('合并模板含六段且示例行被剔除', tplParsed.employees && tplParsed.employees.length === 0 &&
+    window.CSV.COL_ORDER.every((k) => tplAll.includes('#' + k)), `段数=${window.CSV.COL_ORDER.length}`);
+  const realAll = window.CSV.allToCsv({ employees: (await API.list('employees')).slice(0, 2), payrolls: (await API.list('payrolls')).slice(0, 2) }, false);
+  const realParsed = window.CSV.csvToAll(realAll);
+  ok('合并导出→拆回闭环', realParsed.employees.length === 2 && realParsed.payrolls.length === 2,
+    `员工=${realParsed.employees.length}, 薪资=${realParsed.payrolls.length}`);
+
   // 清空 → 自动重种；重置 → 演示数据
   await API.clearAll();
   const d1 = await API.exportAll();

@@ -2,31 +2,71 @@
 const APP = (() => {
   // 检测系统只保留与"风险检测"直接相关的模块；免登录版去掉「成员账户」
   const GROUPS = [
-    { name: '结论', items: [['home', '检测概览'], ['people', '员工风险画像'], ['risk', '风险清单']] },
+    { name: '结论', items: [['home', '风险概览'], ['people', '员工风险画像'], ['risk', '用工风险清单']] },
     { name: '数据填入', items: [['staff', '员工档案'], ['contract', '合同信息'], ['attend', '考勤工时'], ['payroll', '薪资'], ['social', '社保'], ['cert', '证件资质'], ['dataio', '数据导入']] },
-    { name: '风险确认', items: [['riskconfirm', '合规自查'], ['riskrule', '规则配置'], ['regionset', '地区与判定标准'], ['ai', 'AI 问答']] },
-    { name: '系统', items: [['setting', '系统设置']] },
+    { name: '风险确认', items: [['riskconfirm', '合规自查'], ['regionset', '判定阈值'], ['ai', 'AI 问答']] },
+    { name: '系统', items: [['riskrule', '规则配置'], ['setting', '系统设置']] },
   ];
 
-  /* ---------- 首页 ---------- */
+  /* ---------- 首页（风险概览） ---------- */
   PAGES.home = {
-    title: '首页',
+    title: '风险概览',
     async render(c) {
-      const [s, h, pe, rd, confList] = await Promise.all([
-        API.stats().catch(() => ({})),
+      const [scanData, h, pe, rd, confList] = await Promise.all([
+        API.scan().catch(() => ({ items: [] })),
         API.health().catch(() => ({})),
         API.riskByEmployee().catch(() => ({ employees: [] })),
         API.rules().catch(() => ({ rules: [] })),
         API.list('confirms').catch(() => []),
       ]);
+      const items = (scanData.items || []).slice();
       const emps = pe.employees || [];
-      const affected = emps.filter((e) => e.riskCount > 0).length;
-      const high = emps.reduce((x, e) => x + (e.highCount || 0), 0);
       // 覆盖度：全部规则里能由数据测算的条数 + 需自查的条数、已确认条数
       const allRules = rd.rules || [];
       const autoCnt = allRules.filter((r) => r.level === 'auto').length;
       const askCnt = allRules.length - autoCnt;
       const confCnt = (confList || []).length;
+
+      /* ---- 风险概要：基于员工风险画像 + 风险清单扫出的问题自动总结 ---- */
+      const sevRank = (s) => (s === '高' ? 0 : s === '中' ? 1 : 2);
+      const highItems = items.filter((i) => sevRank(i.sev) === 0);
+      const peopleCnt = items.reduce((s, i) => s + (i.people || []).length, 0);
+      const affected = emps.filter((e) => e.riskCount > 0).length;
+      // 按类别聚合
+      const catMap = {};
+      items.forEach((i) => {
+        const k = i.catLabel || i.cat || '其他';
+        if (!catMap[k]) catMap[k] = { cnt: 0, high: 0, risks: [] };
+        catMap[k].cnt++;
+        if (sevRank(i.sev) === 0) catMap[k].high++;
+        catMap[k].risks.push(i.risk);
+      });
+      const cats = Object.keys(catMap)
+        .map((k) => ({ name: k, ...catMap[k] }))
+        .sort((a, b) => b.high - a.high || b.cnt - a.cnt);
+      const topHigh = highItems.slice(0, 3);
+
+      let summaryHtml;
+      if (!items.length) {
+        summaryHtml = `<p style="color:var(--muted);margin:0">暂未扫出风险。先去「数据填入」录入或导入员工数据，系统会自动测算；算不出的项目到「合规自查」逐条确认。</p>`;
+      } else {
+        summaryHtml = `
+          <p style="margin:0 0 10px">
+            本次共扫出 <b>${items.length}</b> 类用工风险，其中 <b style="color:#dc2626">${highItems.length} 类建议优先处理</b>，
+            涉及 <b>${peopleCnt}</b> 人次（${affected} 名员工身上有至少一类风险）。
+          </p>
+          <p style="margin:0 0 6px"><b>问题集中在：</b>${cats
+            .slice(0, 4)
+            .map((k) => `${UI.esc(k.name)} ${k.cnt} 类${k.high ? `（含优先处理 ${k.high} 类）` : ''}`)
+            .join('、')}</p>
+          ${topHigh.length
+            ? `<p style="margin:0 0 6px"><b>建议先处理：</b>${topHigh.map((i) => UI.esc(i.risk)).join('；')}</p>`
+            : ''}
+          <div class="toolbar" style="margin-top:8px">
+            <button class="btn primary" onclick="location.hash='#/risk'">去用工风险清单逐条处理</button>
+            <button class="btn" onclick="location.hash='#/people'">看员工风险画像</button>
+          </div>`;
+      }
 
       c.innerHTML = `
         <div class="demo-banner">
@@ -37,30 +77,13 @@ const APP = (() => {
           </span>
         </div>
         <div class="card">
-          <h2>用工风险检测</h2>
-          <p style="color:var(--muted);margin:0">
-            导入或录入用工数据 → 系统自动测算每个人身上的用工风险 → 算不出的走合规自查 → 给出整改建议。
-          </p>
-        </div>
-        <div class="stat-grid">
-          <div class="stat"><b>${emps.length}</b><span>员工总数</span></div>
-          <div class="stat alert"><b>${affected}</b><span>存在风险的员工</span></div>
-          <div class="stat alert"><b>${high}</b><span>高危问题</span></div>
-          <div class="stat"><b>${s.risks ?? 0}</b><span>风险项合计</span></div>
+          <h2>风险概要</h2>
+          ${summaryHtml}
         </div>
         <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <span style="font-size:13.5px">📊 检测覆盖：<b>${autoCnt}</b> 条已由数据自动测算，<b>${askCnt}</b> 条需合规自查（已确认 <b>${confCnt}</b> / ${askCnt}）</span>
           <div class="spacer"></div>
           <button class="btn small" onclick="location.hash='#/riskconfirm'">去合规自查</button>
-        </div>
-        <div class="card">
-          <h2>开始检测</h2>
-          <div class="toolbar">
-            <button class="btn primary" onclick="location.hash='#/people'">看员工风险画像</button>
-            <button class="btn" onclick="location.hash='#/dataio'">导入数据</button>
-            <button class="btn" onclick="location.hash='#/riskconfirm'">合规自查</button>
-            <button class="btn" onclick="location.hash='#/ai'">问 AI 劳动法问题</button>
-          </div>
         </div>
         <div class="card">
           <h2>系统状态</h2>

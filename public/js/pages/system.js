@@ -1,56 +1,37 @@
 /* 系统模块：数据导入导出 / 系统设置（免登录 A1 版：数据全部在本浏览器 localStorage） */
 window.PAGES = window.PAGES || {};
 
-/* ============ 数据导入导出 ============ */
+/* ============ 数据导入导出（六表合并为单文件） ============ */
 PAGES.dataio = {
   title: '数据导入导出',
   async render(c) {
-    const COLS = [
-      ['employees', '员工'], ['contracts', '劳动合同'], ['attendances', '考勤'],
-      ['payrolls', '薪资'], ['socials', '社保'], ['certs', '证照'],
-    ];
     c.innerHTML = `
       <div class="card">
         <h2>导出</h2>
         <p style="color:var(--muted);font-size:13px">
-          所有数据只存在本浏览器里。建议定期导出 JSON 备份，换电脑或清浏览器数据前导一次。
+          所有数据只存在本浏览器里。建议定期导出备份，换电脑或清浏览器数据前导一次。
         </p>
         <div class="toolbar">
-          <button class="btn primary" id="expJson">导出 JSON 备份（全部数据）</button>
-        </div>
-        <div class="toolbar" style="margin-top:10px">
-          <span style="font-size:13px;color:var(--muted)">单表导出 CSV（Excel / WPS 可直接打开）：</span>
-          <select id="csvCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
-            ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
-          </select>
-          <button class="btn" id="expCsv">导出 CSV</button>
+          <button class="btn primary" id="expCsv">导出 CSV（六表合一，Excel / WPS 可打开）</button>
+          <button class="btn" id="expJson">导出 JSON 备份（含台账/问卷答案）</button>
         </div>
       </div>
 
       <div class="card">
         <h2>导入</h2>
         <p style="color:var(--muted);font-size:13px">
-          <b>.json</b>：整体恢复备份（覆盖当前全部数据，导入前会先让你确认）。<br/>
-          <b>.csv</b>：单表导入，表头需与模板一致；先用「下载模板」拿一份空白表，Excel / WPS 填好后导回。
+          <b>.csv</b>：一个文件装六张表（员工/劳动合同/考勤/薪资/社保/证照，分段存放）。
+          先「下载模板」——模板里每张表都给了 1 行示例，照着格式把自己的数据填进去（示例行可不删，导入时自动跳过）。<br/>
+          <b>.json</b>：整体恢复备份（覆盖当前全部数据，导入前会先让你确认）。
         </p>
-        <input type="file" id="file" accept=".csv,.json" />
-        <div class="toolbar" style="margin-top:10px">
-          <span style="font-size:13px;color:var(--muted)">CSV 导入到：</span>
-          <select id="impCol" style="border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px">
-            ${COLS.map((x) => `<option value="${x[0]}">${x[1]}</option>`).join('')}
-          </select>
-          <button class="btn" id="tplBtn">下载模板</button>
+        <div class="toolbar" style="margin-top:6px">
+          <input type="file" id="file" accept=".csv,.json" />
+          <button class="btn" id="tplBtn">下载模板（含填写示例）</button>
           <button class="btn primary" id="impBtn">确认导入</button>
         </div>
         <p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">
           CSV 导入为<b>追加</b>模式：新记录直接加入，不影响已有数据。导入前会先弹预览，确认无误才入库。
         </p>
-      </div>
-
-      <div class="card">
-        <h2>恢复演示数据</h2>
-        <p style="color:var(--muted);font-size:13px">清空当前数据，恢复为内置的 36 人演示数据（含 17 类预埋风险，外加证照临期提醒）。</p>
-        <button class="btn danger" id="rst">恢复演示数据</button>
       </div>`;
 
     // ---- 导出 ----
@@ -72,15 +53,18 @@ PAGES.dataio = {
     };
 
     c.querySelector('#expCsv').onclick = async () => {
-      const col = c.querySelector('#csvCol').value;
-      const items = await API.list(col);
-      const text = window.CSV.colToCsv(col, items);
-      const label = COLS.filter((x) => x[0] === col)[0][1];
+      const dataByCol = {};
+      let total = 0;
+      for (const col of window.CSV.COL_ORDER) {
+        dataByCol[col] = await API.list(col);
+        total += dataByCol[col].length;
+      }
+      const text = window.CSV.allToCsv(dataByCol, false);
       download(
         new Blob([text], { type: 'text/csv;charset=utf-8' }),
-        '小哲用工风险检测_' + label + '_' + new Date().toISOString().slice(0, 10) + '.csv'
+        '小哲用工风险检测_全部数据_' + new Date().toISOString().slice(0, 10) + '.csv'
       );
-      UI.toast('已导出 ' + label + ' ' + items.length + ' 条');
+      UI.toast('已导出六表合一 CSV，共 ' + total + ' 条');
     };
 
     // ---- 导入 ----
@@ -92,16 +76,14 @@ PAGES.dataio = {
       UI.toast('已选择：' + f.name);
     };
 
-    // 下载空白模板（中文表头，Excel / WPS 直接填）
+    // 下载合并模板（六表各带 1 行示例）
     c.querySelector('#tplBtn').onclick = () => {
-      const col = c.querySelector('#impCol').value;
-      const spec = window.CSV.EXPORT_FIELDS[col];
-      const label = COLS.filter((x) => x[0] === col)[0][1];
+      const text = window.CSV.allToCsv(null, true);
       download(
-        new Blob(['﻿' + spec.map((f) => f.t).join(',') + '\r\n'], { type: 'text/csv;charset=utf-8' }),
-        '模板_' + label + '.csv'
+        new Blob([text], { type: 'text/csv;charset=utf-8' }),
+        '模板_用工数据六表合一.csv'
       );
-      UI.toast('已下载「' + label + '」模板，第一行表头别动，从第二行开始填');
+      UI.toast('模板已下载：每张表给了 1 行示例，照着填即可，示例行可不删');
     };
 
     c.querySelector('#impBtn').onclick = async () => {
@@ -119,31 +101,38 @@ PAGES.dataio = {
         }
         if (name.endsWith('.csv')) {
           const text = await picked.text();
-          const col = c.querySelector('#impCol').value;
-          const spec = window.CSV.EXPORT_FIELDS[col];
-          const recs = window.CSV.csvToCol(col, text);
-          if (!recs.length) return UI.toast('CSV 里没有可导入的记录');
-          const label = COLS.filter((x) => x[0] === col)[0][1];
-          const prev = recs.slice(0, 5).map((r, i) => `<tr><td>${i + 1}</td>` +
+          const byCol = window.CSV.csvToAll(text);
+          const cols = Object.keys(byCol).filter((k) => byCol[k].length);
+          if (!cols.length) {
+            return UI.toast('CSV 里没有可导入的记录（请用本站下载的模板，段头 #员工 等行别删）');
+          }
+          const totalCnt = cols.reduce((s, k) => s + byCol[k].length, 0);
+          const summary = cols
+            .map((k) => `<tr><td>${UI.esc(window.CSV.COL_LABELS[k] || k)}</td><td style="text-align:right"><b>${byCol[k].length}</b> 条</td></tr>`)
+            .join('');
+          const firstCol = cols[0];
+          const spec = window.CSV.EXPORT_FIELDS[firstCol];
+          const prev = byCol[firstCol].slice(0, 5).map((r, i) => `<tr><td>${i + 1}</td>` +
             spec.map((f) => `<td>${UI.esc(r[f.k] === true ? '是' : r[f.k] === false ? '否' : (r[f.k] ?? ''))}</td>`).join('') +
             '</tr>').join('');
           UI.modal('导入预览', `
-            <p style="margin:0 0 8px">将从「${UI.esc(picked.name)}」向<b>${UI.esc(label)}</b>追加 <b>${recs.length}</b> 条记录：</p>
-            <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+            <p style="margin:0 0 8px">将从「${UI.esc(picked.name)}」导入 <b>${totalCnt}</b> 条记录，分布如下：</p>
+            <table class="tbl" style="margin:0 0 10px"><tbody>${summary}</tbody></table>
+            <p style="margin:0 0 6px;color:var(--muted);font-size:12.5px">「${UI.esc(window.CSV.COL_LABELS[firstCol])}」表前 ${Math.min(5, byCol[firstCol].length)} 条预览：</p>
+            <div style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px">
               <table class="tbl" style="margin:0"><thead><tr><th>#</th>${spec.map((f) => `<th>${UI.esc(f.t)}</th>`).join('')}</tr></thead><tbody>${prev}</tbody></table>
             </div>
-            ${recs.length > 5 ? `<p style="color:var(--muted);font-size:12.5px;margin:8px 0 0">仅预览前 5 条，实际导入全部 ${recs.length} 条。</p>` : ''}
           `, [
             { text: '取消', onClick: UI.closeModal },
             {
               text: '确认导入', cls: 'primary',
               onClick: async () => {
                 UI.closeModal();
-                for (const r of recs) await API.add(col, r);
-                UI.toast('已导入 ' + recs.length + ' 条');
-                UI.modal('导入完成', `<p style="margin:0">已向「${UI.esc(label)}」导入 <b>${recs.length}</b> 条记录。数据有变化，建议马上去风险清单重新扫描。</p>`, [
+                for (const col of cols) for (const r of byCol[col]) await API.add(col, r);
+                UI.toast('已导入 ' + totalCnt + ' 条');
+                UI.modal('导入完成', `<p style="margin:0">已导入 <b>${totalCnt}</b> 条记录（${cols.map((k) => UI.esc(window.CSV.COL_LABELS[k] || k)).join('、')}）。数据有变化，建议马上去用工风险清单重新扫描。</p>`, [
                   { text: '留在本页', onClick: () => { UI.closeModal(); location.reload(); } },
-                  { text: '去风险清单扫描', cls: 'primary', onClick: () => { UI.closeModal(); location.hash = '#/risk'; } },
+                  { text: '去用工风险清单扫描', cls: 'primary', onClick: () => { UI.closeModal(); location.hash = '#/risk'; } },
                 ]);
               },
             },
@@ -155,19 +144,12 @@ PAGES.dataio = {
         UI.toast('导入失败：' + e.message);
       }
     };
-
-    c.querySelector('#rst').onclick = () =>
-      UI.confirmBox('将清空当前全部数据，恢复演示数据，确定？', async () => {
-        await API.reset();
-        UI.toast('已恢复');
-        setTimeout(() => location.reload(), 600);
-      });
   },
 };
 
-/* ============ 地区与判定标准（原系统设置的「所在地区 + 风险判定阈值」） ============ */
+/* ============ 判定阈值（所在地区 + 风险判定阈值） ============ */
 PAGES.regionset = {
-  title: '地区与判定标准',
+  title: '判定阈值',
   async render(c) {
     const [s, , rg] = await Promise.all([
       API.settings(), Promise.resolve({}),

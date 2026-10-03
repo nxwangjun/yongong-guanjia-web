@@ -117,7 +117,7 @@ const UI = (() => {
           </div>
           ${cfg.desc ? `<p style="color:var(--muted);font-size:13px;margin:0 0 10px">${esc(cfg.desc)}</p>` : ''}
           <p style="font-size:13px;margin:0 0 10px">
-            <a href="#/risk" style="color:var(--primary);text-decoration:none">✅ 数据录完或改完 → 去「风险清单」重新扫描看结果 →</a>
+            <a href="#/risk" style="color:var(--primary);text-decoration:none">✅ 数据录完或改完 → 去「用工风险清单」重新扫描看结果 →</a>
           </p>
           <table class="tbl">
             <thead><tr>

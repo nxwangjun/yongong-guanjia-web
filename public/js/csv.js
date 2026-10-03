@@ -29,6 +29,21 @@ window.CSV = (() => {
     ],
   };
 
+  /* 各表 1 行示例数据（模板用，导入时自动剔除） */
+  const SAMPLES = {
+    employees: { name: '张三', empNo: 'YG001', dept: '生产部', entryDate: '2025-03-01', status: '在职' },
+    contracts: { employeeId: '张三', type: '固定期限', months: 36, probationMonths: 3, signDate: '2025-03-01', endDate: '2028-02-29' },
+    attendances: { employeeId: '张三', month: '2026-09', overtimeHours: 10, hours: 176 },
+    payrolls: { employeeId: '张三', month: '2026-09', amount: 5000, overtimePay: 500, probation: '', formalAmount: '' },
+    socials: { employeeId: '张三', insured: '是', base: 5000 },
+    certs: { employeeId: '张三', name: '低压电工证', no: 'T6401002025001', expireDate: '2028-03-01' },
+  };
+  const COL_LABELS = {
+    employees: '员工', contracts: '劳动合同', attendances: '考勤',
+    payrolls: '薪资', socials: '社保', certs: '证照',
+  };
+  const COL_ORDER = ['employees', 'contracts', 'attendances', 'payrolls', 'socials', 'certs'];
+
   function rowsToCsv(rows) {
     return (rows || []).map((r) =>
       (r || []).map((v) => {
@@ -80,6 +95,85 @@ window.CSV = (() => {
     return '﻿' + rowsToCsv(rows);
   }
 
+  /* 单表模板（表头 + 1 行示例） */
+  function colTemplate(col) {
+    const spec = EXPORT_FIELDS[col];
+    const smp = SAMPLES[col] || {};
+    const rows = [spec.map((f) => f.t), spec.map((f) => (smp[f.k] === undefined ? '' : smp[f.k]))];
+    return '﻿' + rowsToCsv(rows);
+  }
+
+  /* 六表合并成一个 CSV：每段以「#表名（表标题）」开头，导出带真实数据、模板带 1 行示例 */
+  function allToCsv(dataByCol, withSample) {
+    const parts = COL_ORDER.map((col) => {
+      const spec = EXPORT_FIELDS[col];
+      const seg = ['#' + col + '（' + COL_LABELS[col] + '）', spec.map((f) => f.t).join(',')];
+      if (withSample) {
+        const smp = SAMPLES[col] || {};
+        seg.push(spec.map((f) => (smp[f.k] === undefined ? '' : smp[f.k])).join(','));
+      } else {
+        (dataByCol[col] || []).forEach((it) => {
+          seg.push(spec.map((f) => {
+            let v = it[f.k];
+            if (f.d && typeof v === 'number') {
+              const dt = new Date(v);
+              v = isNaN(dt) ? v : dt.toISOString().slice(0, 10);
+            }
+            if (typeof v === 'boolean') v = v ? '是' : '否';
+            const s = v === null || v === undefined ? '' : String(v);
+            return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          }).join(','));
+        });
+      }
+      return seg.join('\r\n');
+    });
+    return '﻿' + parts.join('\r\n\r\n');
+  }
+
+  /* 合并 CSV → 按段拆回各表（自动识别段头；无段头的旧单表文件由调用方指定 col） */
+  function csvToAll(text) {
+    const rows = csvToRows(text);
+    const out = {};
+    let cur = null;
+    let head = null;
+    rows.forEach((r) => {
+      const first = String(r[0] || '').trim();
+      const m = first.match(/^#\s*([a-zA-Z]+)/);
+      if (m && EXPORT_FIELDS[m[1]]) {
+        cur = m[1];
+        head = null;
+        if (!out[cur]) out[cur] = [];
+        return;
+      }
+      if (!cur) return;
+      if (!head) { head = r.map((h) => String(h).trim()); return; }
+      const spec = EXPORT_FIELDS[cur];
+      const idx = spec.map((f) => head.indexOf(f.t));
+      const o = {};
+      spec.forEach((f, i) => {
+        let v = idx[i] >= 0 ? r[idx[i]] : '';
+        if (v === '是') v = true;
+        else if (v === '否') v = false;
+        else if (f.k === 'months' || f.k === 'probationMonths' || f.k === 'overtimeHours' ||
+                 f.k === 'hours' || f.k === 'amount' || f.k === 'overtimePay' ||
+                 f.k === 'probation' || f.k === 'formalAmount' || f.k === 'base') {
+          v = v === '' ? '' : Number(v);
+        }
+        o[f.k] = v;
+      });
+      out[cur].push(o);
+    });
+    // 剔除与示例行一模一样的记录（用户忘了删示例时不会把「张三」导进去）
+    Object.keys(out).forEach((col) => {
+      const smp = SAMPLES[col] || {};
+      out[col] = out[col].filter((o) => {
+        const same = Object.keys(smp).every((k) => String(o[k] ?? '') === String(smp[k]));
+        return !same;
+      });
+    });
+    return out;
+  }
+
   /* CSV 文本 → 集合记录数组（按中文表头对回字段名，追加模式用） */
   function csvToCol(col, text) {
     const spec = EXPORT_FIELDS[col];
@@ -105,5 +199,5 @@ window.CSV = (() => {
     });
   }
 
-  return { EXPORT_FIELDS, rowsToCsv, csvToRows, colToCsv, csvToCol };
+  return { EXPORT_FIELDS, SAMPLES, COL_LABELS, COL_ORDER, rowsToCsv, csvToRows, colToCsv, csvToCol, colTemplate, allToCsv, csvToAll };
 })();

@@ -8,9 +8,9 @@ function sevRank(s) {
   return s === '高' ? 0 : s === '中' ? 1 : 2;
 }
 
-/* ============ 风险清单 ============ */
+/* ============ 用工风险清单 ============ */
 PAGES.risk = {
-  title: '风险清单',
+  title: '用工风险清单',
   async render(c) {
     c.innerHTML = `<div class="notice">${DISCLAIMER}</div><div class="card">正在扫描…</div>`;
     let data;
@@ -34,7 +34,7 @@ PAGES.risk = {
       </div>
       <div class="card">
         <div class="toolbar">
-          <h2 style="margin:0">风险清单（按处理优先级排序）</h2>
+          <h2 style="margin:0">用工风险清单（按处理优先级排序）</h2>
           <div class="spacer"></div>
           <button class="btn" id="btnRescan">重新扫描</button>
         </div>
