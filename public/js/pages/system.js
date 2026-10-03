@@ -278,6 +278,21 @@ PAGES.setting = {
           <button class="btn primary" id="saveKey">保存并启用 AI</button>
           <button class="btn danger" id="clearKey">清空密钥</button>
         </div>
+      </div>
+      <div class="card">
+        <h2>系统状态</h2>
+        <table class="tbl">
+          <tr><td style="width:160px;color:var(--muted)">大模型（AI）</td><td>${h.llmEnabled
+            ? '<span class="tag green">已接入 ' + UI.esc(h.model) + '</span>'
+            : '<span class="tag orange">未配置密钥，本地规则引擎兜底</span>'}</td></tr>
+          <tr><td style="color:var(--muted)">劳动法知识库</td><td>${h.corpusSize ?? 0} 条（法条 / 规则 / 风险点）</td></tr>
+          <tr><td style="color:var(--muted)">风险规则</td><td>${(() => {
+            const all = (window.Engine.RULES || []).concat(window.Engine.EXTRA_RULE_LIST || []);
+            const auto = all.filter((r) => r.level === 'auto').length;
+            return `${all.length} 条（其中 ${auto} 条可由数据自动测算，其余走合规自查台账或问卷）`;
+          })()}</td></tr>
+          <tr><td style="color:var(--muted)">数据存储</td><td>仅存在本浏览器（localStorage），不上传服务器</td></tr>
+        </table>
       </div>`;
 
     c.querySelector('#saveKey').onclick = async () => {

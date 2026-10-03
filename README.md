@@ -40,7 +40,7 @@ node server.js          # 启动（默认 http://localhost:3000）
 其他命令：
 
 ```bash
-node tests/smoke.js          # 端到端冒烟测试（33 项断言，需先启动 server.js）
+node tests/smoke.js          # 端到端冒烟测试（35 项断言，需先启动 server.js）
 node scripts/build-browser.js  # 改了 src/engine.js / src/db.js / data/*.json 后重建前端 bundle
 ```
 
@@ -160,7 +160,7 @@ LLM_MODEL=deepseek-chat
 │       （data-bundle.js / seed.js / engine-browser.js 由 scripts/build-browser.js 生成）
 ├── data/                  知识数据（corpus / quiz / rules / region 随仓库提交）
 ├── scripts/               语料、规则、前端 bundle 构建脚本
-├── tests/                 冒烟测试（smoke.js，33 项断言）
+├── tests/                 冒烟测试（smoke.js，35 项断言）
 └── docs/                  设计与路演文档
 ```
 

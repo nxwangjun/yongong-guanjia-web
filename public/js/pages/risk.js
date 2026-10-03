@@ -39,7 +39,7 @@ PAGES.risk = {
           <button class="btn" id="btnRescan">重新扫描</button>
         </div>
         <div id="riskList"></div>
-        ${items.length ? '' : '<p style="color:var(--muted)">未发现风险。可先录入员工/合同/薪资数据，或在「确认台账」「自检问卷」里补充系统算不出的项目。</p>'}
+        ${items.length ? '' : '<p style="color:var(--muted)">未发现风险。可先录入员工/合同/薪资数据，或在「合规自查」里补充系统算不出的项目。</p>'}
       </div>`;
 
     const listEl = c.querySelector('#riskList');
@@ -100,7 +100,7 @@ function riskCard(it, idx, firstCount) {
     </div>
     <div class="ri-body" id="body-${idx}">
       ${people ? `<b>涉及人员：</b><ul class="people-list">${people}</ul>` : ''}
-      ${it.answer ? `<div style="margin-top:6px"><b>台账/问卷结论：</b>${it.answer === 'no' ? '未做到' : '待核实'}${it.note ? ' · 备注：' + UI.esc(it.note) : ''}</div>` : ''}
+      ${it.answer ? `<div style="margin-top:6px"><b>台账/问卷结论：</b>${it.answer === 'no' ? '未做到' : '待核实'}</div>` : ''}
       ${it.consequence ? `<div style="margin-top:6px"><b>可能的后果：</b>${UI.esc(it.consequence)}</div>` : ''}
       ${remedy ? `<div style="margin-top:6px"><b>整改要点：</b><br/>${remedy}</div>` : ''}
       ${law ? `<div style="margin-top:6px"><b>法律依据：</b>${law}</div>` : ''}
@@ -175,7 +175,7 @@ PAGES.riskconfirm = {
           <input class="search" id="kw" placeholder="搜索…" />
         </div>
         <p style="color:var(--muted);font-size:13px;margin:0 0 10px">
-          系统算不出的项目，在这里逐条勾选（原「确认台账」与「自检问卷」已合并为一处）。
+          系统算不出的项目，在这里逐条勾选。
           勾选完点页面底部「提交自查结果」，答「没做到」的会进入风险清单。
         </p>
         <div id="list"></div>
@@ -204,31 +204,33 @@ PAGES.riskconfirm = {
               <button class="opt ${a && a.answer === 'yes' ? 'on-yes' : ''}" data-ans="yes">已做到</button>
               <button class="opt ${a && a.answer === 'no' ? 'on-no' : ''}" data-ans="no">没做到</button>
               <button class="opt ${a && a.answer === 'unsure' ? 'on-unsure' : ''}" data-ans="unsure">不适用/待核实</button>
+              <button class="opt" data-law="${r.id}" title="查看本题法律依据">法律依据</button>
             </div>
-            ${a && a.answer === 'no' ? `<div style="margin-top:6px"><input class="search" style="width:100%" placeholder="备注（可选）" value="${UI.esc(a.note || '')}" data-note="${r.id}" /></div>` : ''}
           </div>`;
         })
         .join('');
 
-      listEl.querySelectorAll('.opt').forEach((b) => {
+      listEl.querySelectorAll('.opt[data-ans]').forEach((b) => {
         b.onclick = () => {
           const wrap = b.closest('.q');
           const rid = wrap.dataset.rule;
           const ans = b.dataset.ans;
-          wrap.querySelectorAll('.opt').forEach((o) => o.classList.remove('on-yes', 'on-no', 'on-unsure'));
+          wrap.querySelectorAll('.opt[data-ans]').forEach((o) => o.classList.remove('on-yes', 'on-no', 'on-unsure'));
           b.classList.add('on-' + ans);
-          const prev = pend[rid] || answered[rid] || {};
-          pend[rid] = { ruleId: rid, answer: ans, note: prev.note || '' };
+          pend[rid] = { ruleId: rid, answer: ans };
           updPend();
-          if (ans === 'no') draw(c.querySelector('#kw').value.trim());
         };
       });
-      listEl.querySelectorAll('[data-note]').forEach((inp) => {
-        inp.onchange = () => {
-          const rid = inp.dataset.note;
-          const prev = pend[rid] || answered[rid] || { ruleId: rid, answer: 'no' };
-          pend[rid] = { ruleId: rid, answer: prev.answer || 'no', note: inp.value };
-          updPend();
+      listEl.querySelectorAll('[data-law]').forEach((b) => {
+        b.onclick = () => {
+          const r = rules.find((x) => x.id === b.dataset.law);
+          if (!r) return;
+          const laws = Array.isArray(r.law) ? r.law : [];
+          const body = laws.length
+            ? laws.map((l) => `<p style="margin:0 0 8px"><b>${UI.esc(l.ref || '')}</b><br/><span style="font-size:13px">${UI.esc(l.text || '')}</span></p>`).join('')
+            : '<p style="margin:0;color:var(--muted)">该题暂未收录法条原文。</p>';
+          UI.modal('法律依据', `<p style="margin:0 0 10px;color:var(--muted);font-size:13px">${UI.esc(r.q || r.risk)}</p>` + body,
+            [{ text: '关闭', cls: '', onClick: () => UI.closeModal() }]);
         };
       });
     };
@@ -238,8 +240,8 @@ PAGES.riskconfirm = {
       const ids = Object.keys(pend);
       if (!ids.length) return UI.toast('还没有勾选任何项目');
       for (const rid of ids) {
-        await API.confirm(rid, pend[rid].answer, pend[rid].note || '');
-        answered[rid] = { ruleId: rid, answer: pend[rid].answer, note: pend[rid].note || '' };
+        await API.confirm(rid, pend[rid].answer, '');
+        answered[rid] = { ruleId: rid, answer: pend[rid].answer };
         delete pend[rid];
       }
       const noCnt = ids.filter((rid) => answered[rid].answer === 'no').length;
